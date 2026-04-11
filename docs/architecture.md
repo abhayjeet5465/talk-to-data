@@ -1,0 +1,3 @@
+# Architecture Notes
+
+## Data flow

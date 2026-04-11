@@ -1,0 +1,21 @@
+# Talk to Data — NatWest Code for Purpose 2026
+# Install with: pip install -r requirements.txt
+# All packages are Apache 2.0, MIT, or BSD-3 licensed
+
+# UI framework
+streamlit==1.45.0
+
+# Data processing
+pandas==2.2.3
+openpyxl==3.1.5          # Excel file support (.xlsx)
+duckdb==1.2.2             # In-memory SQL engine
+
+# LLM clients
+groq==0.23.1              # Primary: Groq API (Apache 2.0)
+google-generativeai==0.8.5  # Fallback: Gemini API (Apache 2.0)
+
+# Visualisation
+plotly==6.0.1
+
+# Utilities
+python-dotenv==1.1.0      # Load .env variables
