@@ -5,6 +5,10 @@
 ## Overview
 **Talk to Data** is an enterprise-grade, privacy-preserving conversational analytics application built for the NatWest Code for Purpose Hackathon. 
 
+![Graph Output Showcase](assets/image1.png)
+
+![Talk to Data UI Showcase](assets/image2.png)
+
 Many non-technical users struggle to get quick, trustworthy answers from their data due to complex tools and unclear terminology. This project democratizes data access by allowing users to upload any CSV or Excel file and ask questions in plain English. By prioritizing **Clarity**, **Trust**, and **Speed**, the application bridges the gap between raw data and actionable business insights.
 
 ## Features
@@ -55,6 +59,7 @@ Many non-technical users struggle to get quick, trustworthy answers from their d
    ```
 
 ## Usage Examples
+
 1. **Upload your file:** Use the main sidebar to upload your own `sales_sample.csv` or `.xlsx` file. A dataset info panel will appear, detailing your rows, columns, and data types.
 2. **Ask a question:** Type into the chat input:
    > *"What is the breakdown of units sold by region?"*
@@ -77,6 +82,14 @@ To run the full suite:
 ```bash
 python -m pytest tests/ -v
 ```
+
+## Limitations
+- **Cross-file querying**: Currently, the system supports analyzing one uploaded dataset at a time. It does not support joining multiple uploaded files.
+- **Extreme Scale**: Because `DuckDB` runs in-memory, the file upload is capped at 50MB via Streamlit's config to prevent memory exhaustion on local hardware.
+
+## Future Improvements
+- **Semantic Dictionary Integration**: Allow companies to upload a JSON dictionary of defined metrics (e.g. `{"active_user": "logged in within 30 days"}`) and inject this dynamically into the LLM prompt.
+- **Export to PDF**: Add a button to export the generated narrative and Plotly chart into a downloadable PDF report for management.
 
 ## Licensing & Compliance
 This project is licensed under the Apache License 2.0. All commits are signed off under the Developer Certificate of Origin (DCO).
