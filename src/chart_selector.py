@@ -94,7 +94,8 @@ def _choose_chart(df: pd.DataFrame, question: str) -> Optional[go.Figure]:
         return None
 
     # Rule 2 — date + numeric → line chart (trend over time)
-    if date_cols and numeric_cols:
+    # Require at least 2 rows — a single point produces a meaningless dot.
+    if date_cols and numeric_cols and rows > 1:
         logger.debug("chart_selector: date+numeric → line chart")
         return _line_chart(df, date_cols[0], numeric_cols[0], question)
 

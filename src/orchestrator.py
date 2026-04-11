@@ -73,6 +73,8 @@ class AnswerResult:
     source_info: str = ""
     error: str = ""
     cannot_answer: bool = False
+    # The actual result DataFrame — used to show verified numbers in the XAI expander
+    result_df: Optional[pd.DataFrame] = None
     # XAI metadata — populated from the structured LLM response
     columns_used: list = field(default_factory=list)
     assumptions: str = ""
@@ -202,6 +204,7 @@ def run_query(
         row_count=len(result_df),
         col_count=len(result_df.columns),
         source_info=source_info,
+        result_df=result_df,
         self_corrected=self_corrected,
         columns_used=list(payload.columns_used),
         assumptions=payload.assumptions,

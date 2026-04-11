@@ -324,20 +324,38 @@ for q, result in reversed(st.session_state.history):
         answer_html += "</div>"
         st.markdown(answer_html, unsafe_allow_html=True)
 
-        # ── Chart ──────────────────────────────────────────────────────
+        # ── Chart or summary metrics ────────────────────────────────────
         if result.chart is not None:
             st.plotly_chart(result.chart, use_container_width=True)
+
+        elif result.row_count == 1 and result.col_count > 1:
+            # Summary result (e.g. "summarise data") — 1 row, many numeric columns.
+            # Show each value as a labelled metric tile in a horizontal grid.
+            if result.result_df is not None:
+                row = result.result_df.iloc[0]
+                cols_to_show = result.result_df.columns.tolist()
+                metric_cols = st.columns(min(len(cols_to_show), 4))
+                for i, col_name in enumerate(cols_to_show):
+                    raw_val = row[col_name]
+                    # Format numbers nicely: integers without decimals, floats to 2dp
+                    try:
+                        val = f"{int(raw_val):,}" if float(raw_val) == int(float(raw_val)) else f"{float(raw_val):,.2f}"
+                    except (ValueError, TypeError):
+                        val = str(raw_val)
+                    metric_cols[i % 4].metric(label=col_name.replace("_", " ").title(), value=val)
+
         elif result.row_count == 1 and result.col_count == 1:
-            # Single-value result — show as a big metric card
+            # True single value — show as a big metric card
             st.metric(label="Result", value=result.answer.split()[0] if result.answer else "—")
 
         # ── Source info ────────────────────────────────────────────────
         if result.source_info:
-            st.caption(f"📁 {result.source_info}")
+            note = " (aggregated summary)" if result.row_count == 1 and result.col_count > 1 else ""
+            st.caption(f"📁 {result.source_info}{note}")
 
     # ── XAI "How was this calculated?" expander ────────────────────────
     # This is the Trust pillar — mandatory for NatWest submission.
-    # Shows the SQL, columns used, and any assumptions made.
+    # Shows the SQL, columns used, assumptions made, and the actual data table.
     if result.sql:
         with st.expander("🔬 How was this calculated? (Source transparency)"):
             left, right = st.columns([1, 2])
@@ -356,6 +374,11 @@ for q, result in reversed(st.session_state.history):
 
             if result.assumptions:
                 st.info(f"💡 **Assumption made:** {result.assumptions}")
+
+            # Show the actual result data table so users can verify the raw numbers
+            if result.result_df is not None and not result.result_df.empty:
+                st.markdown("**🔢 Raw query result (exact numbers)**")
+                st.dataframe(result.result_df, use_container_width=True, hide_index=True)
 
     st.divider()
 
