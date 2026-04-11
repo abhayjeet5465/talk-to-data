@@ -128,26 +128,21 @@ def build_schema_string(
     column_types: dict[str, str],
     filename: str,
 ) -> str:
-    """
-    Build a concise schema description string for the LLM prompt.
+    """Build a concise schema description string for the LLM prompt.
 
-    Format:
-        Table: data
-        Source: filename.csv
-        Rows: 1234  Columns: 5
-
-        Columns:
-          - date (datetime): 2026-01-01, 2026-01-08, 2026-01-15
-          - region (text): North, South, East
-          - revenue (float): 12000.0, 8500.0, 6200.0
+    Enriched format includes:
+    - Column name, type, and sample values (always)
+    - min / max for numeric columns (helps LLM write valid range filters)
+    - Full unique value list for low-cardinality text columns (≤15 unique values)
+      This prevents the LLM from guessing category names like "North" vs "North Region"
 
     Args:
-        df: The full DataFrame.
+        df:           The full DataFrame.
         column_types: Dict of column name → type label.
-        filename: Original filename shown to the LLM for source transparency.
+        filename:     Original filename shown to the LLM for source transparency.
 
     Returns:
-        A multi-line string describing the schema with sample values.
+        A multi-line string describing the schema with enriched sample values.
     """
     lines = [
         f"Table: {DUCKDB_TABLE_NAME}",
@@ -158,15 +153,40 @@ def build_schema_string(
     ]
 
     for col, col_type in column_types.items():
-        # Get up to MAX_SAMPLE_ROWS non-null sample values
-        samples = (
-            df[col]
-            .dropna()
-            .head(MAX_SAMPLE_ROWS)
-            .tolist()
-        )
-        sample_str = ", ".join(str(v) for v in samples)
-        lines.append(f"  - {col} ({col_type}): {sample_str}")
+        col_data = df[col].dropna()
+
+        if col_type in ("integer", "float"):
+            # For numeric columns: show sample values + min and max
+            samples = col_data.head(MAX_SAMPLE_ROWS).tolist()
+            sample_str = ", ".join(str(v) for v in samples)
+            try:
+                min_val = col_data.min()
+                max_val = col_data.max()
+                lines.append(
+                    f"  - {col} ({col_type}): {sample_str}"
+                    f" | min={min_val:.2f}, max={max_val:.2f}"
+                )
+            except Exception:
+                lines.append(f"  - {col} ({col_type}): {sample_str}")
+
+        elif col_type == "text":
+            unique_vals = col_data.unique()
+            if len(unique_vals) <= 15:
+                # Low cardinality — show ALL unique values so the LLM knows
+                # exactly what values exist in this column (e.g. region names)
+                val_list = sorted(str(v) for v in unique_vals[:20])
+                lines.append(f"  - {col} ({col_type}): all values = {val_list}")
+            else:
+                # High cardinality — just show 3 samples
+                samples = col_data.head(MAX_SAMPLE_ROWS).tolist()
+                sample_str = ", ".join(str(v) for v in samples)
+                lines.append(f"  - {col} ({col_type}): {sample_str}")
+
+        else:
+            # datetime, boolean — show sample values only
+            samples = col_data.head(MAX_SAMPLE_ROWS).tolist()
+            sample_str = ", ".join(str(v) for v in samples)
+            lines.append(f"  - {col} ({col_type}): {sample_str}")
 
     return "\n".join(lines)
 

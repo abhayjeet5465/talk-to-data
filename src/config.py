@@ -43,3 +43,15 @@ def validate_config() -> list[str]:
     if not GEMINI_API_KEY:
         warnings.append("GEMINI_API_KEY is not set — fallback LLM unavailable.")
     return warnings
+
+
+# NatWest official brand colours — used in all Plotly charts
+# Source: https://www.schemecolor.com/natwest-logo-colors.php
+NATWEST_COLORS: list[str] = [
+    "#401664",  # Dark Grape (primary purple)
+    "#EE2033",  # Funky Red (primary red)
+    "#F78E99",  # Fresh Light Red (light pink)
+    "#C20000",  # Guardsman Red (dark red)
+    "#6a1a99",  # Mid Purple
+    "#8B4BA8",  # Light Purple
+]

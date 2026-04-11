@@ -87,29 +87,55 @@ def load_dataframe(df: pd.DataFrame) -> duckdb.DuckDBPyConnection:
 
 
 def is_safe_sql(sql: str) -> bool:
-    """Return True only if the SQL contains no blocked keywords.
+    """Return True only if the SQL is a safe, read-only SELECT statement.
 
-    Checks the uppercased SQL against every entry in SQL_BLOCKLIST
-    (defined in config.py). Whole-word matching is intentionally NOT
-    used here — if "DROP" appears anywhere in the string it is blocked,
-    even inside a string literal, to be maximally safe.
+    Uses two layers of defence:
+    1. sqlparse AST check — verifies the root statement type is SELECT.
+       This catches mutations like UPDATE, DELETE, DROP even if obfuscated.
+    2. Keyword blocklist — secondary fallback for edge cases the AST misses.
 
     Args:
         sql: The SQL string to check (may be multi-line).
 
     Returns:
-        True if safe, False if any blocked keyword is found.
+        True if safe (is a SELECT with no blocked keywords).
+        False if any check fails — fails closed (deny by default).
     """
+    import re
+    import sqlparse
+
+    if not sql or not sql.strip():
+        return False
+
+    # ── Layer 1: AST structural check ─────────────────────────────────────
+    # Parse the SQL and verify the root statement is exactly SELECT.
+    try:
+        statements = sqlparse.parse(sql.strip())
+        if not statements:
+            return False
+        # Only allow a single statement — reject multi-statement payloads
+        if len([s for s in statements if s.get_type()]) > 1:
+            logger.warning("Blocked multi-statement SQL")
+            return False
+        stmt_type = statements[0].get_type()
+        if stmt_type != "SELECT":
+            logger.warning("Blocked non-SELECT statement type: %s", stmt_type)
+            return False
+    except Exception as exc:
+        # If we cannot parse the SQL, deny it
+        logger.warning("sqlparse failed — denying SQL: %s", exc)
+        return False
+
+    # ── Layer 2: Keyword blocklist (secondary defence) ────────────────────
+    # Catches any blocked keywords that slip through the AST check.
     upper = sql.upper()
     for keyword in SQL_BLOCKLIST:
-        # Use word-boundary style: check for keyword surrounded by
-        # non-alpha characters or at string boundaries so e.g.
-        # "TRUNCATE" doesn't block a column named "truncated_at".
-        import re
+        # Word-boundary matching so "truncated_at" doesn't block "TRUNCATE"
         pattern = r"(?<![A-Z_])" + re.escape(keyword.upper()) + r"(?![A-Z_])"
         if re.search(pattern, upper):
             logger.warning("Blocked keyword found in SQL: %s", keyword)
             return False
+
     return True
 
 
