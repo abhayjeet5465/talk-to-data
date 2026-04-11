@@ -228,6 +228,7 @@ with st.expander("💡 Example questions (click to expand)", expanded=False):
 st.divider()
 
 # ── Clarification flow — handles ambiguous questions ──────────────────────
+# Shown inline above the chat input. History stays visible below.
 if st.session_state.clarification_context:
     original_q, clarification_msg = st.session_state.clarification_context
     st.warning(f"🤔 **Clarification needed:** {clarification_msg}")
@@ -241,16 +242,15 @@ if st.session_state.clarification_context:
     with col1:
         if st.button("Ask", key="ask_clarification"):
             if refined.strip():
-                # Proceed with the refined question
                 st.session_state.clarification_context = None
-                # Fall through to question processing below
-                question_to_run = refined.strip()
-                _run_and_store(question_to_run)
+                _run_and_store(refined.strip())
+                # Rerun immediately so the new answer renders in the history section
+                st.rerun()
     with col2:
         if st.button("Cancel", key="cancel_clarification"):
             st.session_state.clarification_context = None
             st.rerun()
-    st.stop()
+    # NOTE: No st.stop() here — old chat history continues to display below.
 
 # ── Question input ─────────────────────────────────────────────────────────
 st.markdown("**2. Ask your question**")
