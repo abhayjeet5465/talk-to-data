@@ -227,36 +227,6 @@ with st.expander("💡 Example questions (click to expand)", expanded=False):
 
 st.divider()
 
-# ── Clarification flow — handles ambiguous questions ──────────────────────
-# Shown inline above the chat input. History stays visible below.
-if st.session_state.clarification_context:
-    original_q, clarification_msg = st.session_state.clarification_context
-    st.warning(f"🤔 **Clarification needed:** {clarification_msg}")
-    st.caption(f"Original question: *{original_q}*")
-    refined = st.text_input(
-        "Please refine your question to include the missing detail:",
-        key="clarification_input",
-        placeholder="e.g. Show top products by total revenue.",
-    )
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        if st.button("Ask", key="ask_clarification"):
-            if refined.strip():
-                st.session_state.clarification_context = None
-                _run_and_store(refined.strip())
-                # Rerun immediately so the new answer renders in the history section
-                st.rerun()
-    with col2:
-        if st.button("Cancel", key="cancel_clarification"):
-            st.session_state.clarification_context = None
-            st.rerun()
-    # NOTE: No st.stop() here — old chat history continues to display below.
-
-# ── Question input ─────────────────────────────────────────────────────────
-st.markdown("**2. Ask your question**")
-question = st.chat_input("e.g. Which region had the highest revenue last month?")
-
-
 # ---------------------------------------------------------------------------
 # Process a question and store the result in history
 # ---------------------------------------------------------------------------
@@ -293,6 +263,35 @@ def _run_and_store(q: str) -> None:
             status.update(label="✅ Analysis complete!", state="complete", expanded=False)
 
     st.session_state.history.append((q, result))
+
+# ── Clarification flow — handles ambiguous questions ──────────────────────
+# Shown inline above the chat input. History stays visible below.
+if st.session_state.clarification_context:
+    original_q, clarification_msg = st.session_state.clarification_context
+    st.warning(f"🤔 **Clarification needed:** {clarification_msg}")
+    st.caption(f"Original question: *{original_q}*")
+    refined = st.text_input(
+        "Please refine your question to include the missing detail:",
+        key="clarification_input",
+        placeholder="e.g. Show top products by total revenue.",
+    )
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        if st.button("Ask", key="ask_clarification"):
+            if refined.strip():
+                st.session_state.clarification_context = None
+                _run_and_store(refined.strip())
+                # Rerun immediately so the new answer renders in the history section
+                st.rerun()
+    with col2:
+        if st.button("Cancel", key="cancel_clarification"):
+            st.session_state.clarification_context = None
+            st.rerun()
+    # NOTE: No st.stop() here — old chat history continues to display below.
+
+# ── Question input ─────────────────────────────────────────────────────────
+st.markdown("**2. Ask your question**")
+question = st.chat_input("e.g. Which region had the highest revenue last month?")
 
 
 # ── Run the pipeline when the user submits a question ─────────────────────
