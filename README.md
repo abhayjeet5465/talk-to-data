@@ -325,8 +325,8 @@ All third-party dependencies are Apache 2.0, MIT, or BSD-3 licensed and compatib
 ---
 
 ## Team 
-Innovators 
-abhayjeet5465,raunaqmittal
+## Innovators 
+abhayjeet5465 , raunaqmittal
 
 Built for **NatWest Code for Purpose 2026 — India Hackathon**
 Theme 1: Talk to Data — Seamless Self-Service Intelligence
