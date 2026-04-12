@@ -5,7 +5,7 @@
 
 <p align="center">
   <a href="https://talk-to-data-lau83kp4qt5knsbgjjbymn.streamlit.app/" target="_blank">
-    <img src="https://static.streamlit.io/badges/streamlit_badge_black_white.svg" width="300">
+    <img src="https://static.streamlit.io/badges/streamlit_badge_black_white.svg" width="100">
   </a>
 </p>
 
