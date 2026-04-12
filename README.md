@@ -1,4 +1,4 @@
-# 📊 Talk to Data
+#  Talk to Data
 ### NatWest Code for Purpose 2026 — Theme 1: Seamless Self-Service Intelligence
 
 > Ask plain-English questions about any dataset. Get instant, trusted, visual answers — no SQL, no technical skills needed.
