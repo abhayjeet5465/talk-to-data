@@ -1,6 +1,8 @@
 #  Talk to Data
 ### NatWest Code for Purpose 2026 — Theme 1: Seamless Self-Service Intelligence
+## Live Demo
 
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://talk-to-data-lau83kp4qt5knsbgjjbymn.streamlit.app/)
 > Ask plain-English questions about any dataset. Get instant, trusted, visual answers — no SQL, no technical skills needed.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
