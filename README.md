@@ -17,6 +17,7 @@ Many non-technical users struggle to get quick, trustworthy answers from their d
 - **Privacy-First Local Execution**: Uses in-memory `DuckDB` to query data locally on your machine. **Your raw data never leaves the session;** only schema metadata (like column names) is sent to the LLM APIs.
 - **Explainable AI (XAI) with Data Lineage**: Every answer includes a "How was this calculated?" transparency expander. For cross-file queries, an additional **"Data Lineage"** panel explicitly lists which files were joined and on which keys.
 - **Enterprise Security**: Implements a strict two-layer defense mechanism (AST parsing via `sqlparse` + keyword blocklists) to guarantee safety from SQL injection or data mutation.
+- **Resilient Data Ingestion**: Automatically handles both standard UTF-8 and legacy Excel/Windows-1252 (`latin-1`) encodings to effortlessly read tricky CSV exports without crashing.
 - **Ambiguity Detection**: If a user asks a vague question (e.g., "Show top products"), the system automatically intercepts it and asks for clarification ("Top by what metric?") instead of guessing.
 - **AI Self-Correction**: When a generated SQL query fails (e.g., hallucinated column name or bad JOIN), the orchestrator silently retries with the error message fed back to the LLM — the user never sees the failure.
 - **Dynamic Visualizations**: Automatically selects and renders beautiful Plotly charts (bar, line, pie) styled in the official NatWest brand palette.
