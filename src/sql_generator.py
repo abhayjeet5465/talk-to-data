@@ -92,7 +92,10 @@ Rules for the SQL inside <sql> tags:
    - SUM(col) FILTER (WHERE condition) for conditional aggregation
    - CTEs (WITH ...) for period-over-period comparisons
    - SUM(col) OVER () as a window function for % of total breakdowns
+   - datediff('day', "Start Col", "End Col") for date subtraction in days
 3. Column names must match the schema exactly — never invent a column.
+   CRITICAL: Any column name shown with double-quotes in the schema (e.g. "Ship Date")
+   MUST be written with those double-quotes in your SQL. Never write Ship Date — always "Ship Date".
 4. Add ORDER BY when returning multiple rows.
 5. Limit results to 500 rows with LIMIT 500.
 6. If the question cannot be answered from the schema, put inside <sql>:
@@ -126,6 +129,8 @@ Rules for the SQL inside <sql> tags:
 2. Always alias every table (e.g. FROM sales s LEFT JOIN catalog c ON s.product_id = c.product_id).
 3. Default to LEFT JOIN — never use INNER JOIN unless you are certain both tables are complete.
 4. Column names must match the schema exactly.
+   CRITICAL: Any column name shown with double-quotes in the schema MUST be written with those double-quotes in your SQL.
+   Also, always quote column names that contain spaces or special characters.
 5. Add ORDER BY when returning multiple rows.
 6. Limit results to 500 rows with LIMIT 500.
 7. If the question cannot be answered from the schema, put inside <sql>:
