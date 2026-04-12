@@ -90,7 +90,9 @@ def infer_column_types(df: pd.DataFrame) -> dict[str, str]:
             # Try to parse as datetime if it looks like a date string
             sample = df[col].dropna().head(5)
             if _looks_like_date(sample):
-                df[col] = pd.to_datetime(df[col], errors="coerce")
+                # dayfirst=True handles DD/MM/YYYY format common in UK/EU datasets.
+                # format='mixed' lets pandas try multiple formats within the same column.
+                df[col] = pd.to_datetime(df[col], errors="coerce", dayfirst=True, format="mixed")
                 type_map[col] = "datetime"
             else:
                 type_map[col] = "text"
@@ -114,7 +116,8 @@ def _looks_like_date(sample: pd.Series) -> bool:
     parsed = 0
     for val in sample:
         try:
-            pd.to_datetime(str(val))
+            # dayfirst=True so that DD/MM/YYYY dates (e.g. '13/02/2010') parse correctly
+            pd.to_datetime(str(val), dayfirst=True)
             parsed += 1
         except Exception:
             pass
