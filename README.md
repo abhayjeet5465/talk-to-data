@@ -138,7 +138,7 @@ The following results were produced using the [Olist Brazilian E-Commerce datase
 **Question asked:** *"What percentage of total payment value comes from each payment type and which one dominates?"*
 
 <!-- ADD SCREENSHOT: Screenshot_2026-04-12_221059.png -->
-![Payment type breakdown showing credit card dominates at 78%](assets/screenshots/screenshot_payment_breakdown.png)
+![Payment type breakdown showing credit card dominates at 78%](assets/screenshot_payment_breakdown.png)
 
 **What the system returned:**
 > "The payment type that dominates is credit_card, making up around 78% of the total payment value, which is approximately $12.5 million. The next largest is boleto, accounting for about 18% of the total payment value, or roughly $2.9 million. (Source: olist_orders_dataset.csv + olist_order_items_dataset.csv + olist_order_payments_dataset.csv, 5 rows analysed)"
@@ -154,7 +154,7 @@ This demonstrates the **Breakdown** use case and the **Trust pillar** — the ex
 **Same question as above — showing the SQL and raw data table**
 
 <!-- ADD SCREENSHOT: Screenshot_2026-04-12_221123.png -->
-![Source transparency panel showing SQL query and raw result table](assets/screenshots/screenshot_transparency_panel.png)
+![Source transparency panel showing SQL query and raw result table](assets/screenshot_transparency_panel.png)
 
 The panel shows:
 - **Columns used:** `payment_type`, `total_payment_value`, `percentage`
@@ -170,7 +170,7 @@ This is the **Trust pillar** in action — every number is traceable to its sour
 **Question asked:** *"Why did order volumes change between 2017 and 2018 and which month was the peak?"*
 
 <!-- ADD SCREENSHOT: Screenshot_2026-04-12_221221.png -->
-![Order volume change analysis between 2017 and 2018](assets/screenshots/screenshot_order_trend.png)
+![Order volume change analysis between 2017 and 2018](assets/screenshot_order_trend.png)
 
 **What the system returned:**
 > "Order volumes changed between 2017 and 2018, with 2018 having higher order counts, around 6,800 orders per month on average, compared to 2017 which had around 4,000 orders per month on average. The peak month was January 2018 with 7,269 orders. (Source: olist_orders_dataset.csv + olist_order_items_dataset.csv + olist_order_payments_dataset.csv, 22 rows analysed)"
@@ -186,7 +186,7 @@ This demonstrates the **Change** use case — identifying a trend shift and pinp
 **Same question — showing the JOIN query generated across files**
 
 <!-- ADD SCREENSHOT: Screenshot_2026-04-12_221237.png -->
-![SQL query showing EXTRACT and GROUP BY across the orders table](assets/screenshots/screenshot_order_sql.png)
+![SQL query showing EXTRACT and GROUP BY across the orders table](assets/screenshot_order_sql.png)
 
 The system generated a DuckDB-compatible query using `EXTRACT(YEAR FROM order_purchase_timestamp)` and `EXTRACT(MONTH FROM ...)` with a `GROUP BY` and `ORDER BY order_count DESC` — without any human SQL knowledge required.
 
@@ -277,13 +277,13 @@ talk-to-data/
 │   └── screenshots/           # UI screenshots for this README
 ├── docs/
 │   ├── architecture.md        # Extended architecture notes
-│   └── prompt_engineering.md  # All LLM prompts documented
+│   └── CLAUDE.md  # AI assistant reference for this codebase
 ├── scripts/
 │   └── verify_setup.py        # Confirms all dependencies and API keys
 ├── app.py                     # Streamlit entry point
 ├── requirements.txt           # All dependencies pinned to exact versions
 ├── .env.example               # Template for environment variables
-├── CLAUDE.md                  # AI assistant reference for this codebase
+           
 ├── REFERENCE.md               # Full developer reference and progress log
 └── LICENSE                    # Apache 2.0
 ```
@@ -324,7 +324,9 @@ All third-party dependencies are Apache 2.0, MIT, or BSD-3 licensed and compatib
 
 ---
 
-## Team
+## Team 
+Innovators 
+abhayjeet5465,raunaqmittal
 
 Built for **NatWest Code for Purpose 2026 — India Hackathon**
 Theme 1: Talk to Data — Seamless Self-Service Intelligence
