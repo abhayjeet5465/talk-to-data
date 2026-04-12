@@ -94,11 +94,12 @@ def infer_column_types(df: pd.DataFrame) -> dict[str, str]:
             type_map[col] = "float"
         else:
             # Try to parse as datetime if it looks like a date string
-            sample = df[col].dropna().head(5)
+            sample = df[col].dropna().head(20)
             if _looks_like_date(sample):
-                # dayfirst=True handles DD/MM/YYYY format common in UK/EU datasets.
-                # format='mixed' lets pandas try multiple formats within the same column.
-                df[col] = pd.to_datetime(df[col], errors="coerce", dayfirst=True, format="mixed")
+                # Auto-detect whether the column uses DD/MM/YYYY or MM/DD/YYYY.
+                # Hard-coding dayfirst=True would break US-format datasets (e.g. Superstore).
+                dayfirst = _infer_dayfirst(sample)
+                df[col] = pd.to_datetime(df[col], errors="coerce", dayfirst=dayfirst, format="mixed")
                 type_map[col] = "datetime"
             else:
                 type_map[col] = "text"
@@ -122,14 +123,42 @@ def _looks_like_date(sample: pd.Series) -> bool:
     parsed = 0
     for val in sample:
         try:
-            # dayfirst=True so that DD/MM/YYYY dates (e.g. '13/02/2010') parse correctly
-            pd.to_datetime(str(val), dayfirst=True)
+            pd.to_datetime(str(val), dayfirst=False)
             parsed += 1
         except Exception:
             pass
 
     # Require at least 80% to parse cleanly
     return (parsed / len(sample)) >= 0.8
+
+
+def _infer_dayfirst(sample: pd.Series) -> bool:
+    """
+    Detect whether a date column uses DD/MM/YYYY (dayfirst=True) or MM/DD/YYYY (dayfirst=False).
+
+    Strategy: scan up to 20 values looking for a date string whose first numeric
+    component is > 12. That value is ONLY valid as a day (not a month), so the
+    format must be DD/MM/YYYY -> return True.
+    If no such value is found the format is assumed to be MM/DD/YYYY -> return False.
+
+    Args:
+        sample: A Series of raw date strings.
+
+    Returns:
+        True  -> DD/MM/YYYY (e.g. Retail dataset: '13/02/2010')
+        False -> MM/DD/YYYY (e.g. Superstore:     '11/8/2016')
+    """
+    import re
+    for val in sample:
+        # Match the first numeric token before a separator
+        m = re.match(r'(\d{1,2})[/\-\.](\d{1,2})', str(val).strip())
+        if m:
+            first = int(m.group(1))
+            if first > 12:
+                # This can only be a day — format is DD/MM/YYYY
+                return True
+    # All first components <= 12: ambiguous, default to MM/DD/YYYY (safer for US datasets)
+    return False
 
 
 def build_schema_string(
@@ -163,6 +192,9 @@ def build_schema_string(
 
     for col, col_type in column_types.items():
         col_data = df[col].dropna()
+        # DuckDB requires double-quotes around column names that contain spaces.
+        # Show the SQL-safe name in the schema so the LLM copies it verbatim.
+        sql_col = f'"{col}"' if ' ' in col else col
 
         if col_type in ("integer", "float"):
             # For numeric columns: show sample values + min and max
@@ -172,11 +204,11 @@ def build_schema_string(
                 min_val = col_data.min()
                 max_val = col_data.max()
                 lines.append(
-                    f"  - {col} ({col_type}): {sample_str}"
+                    f"  - {sql_col} ({col_type}): {sample_str}"
                     f" | min={min_val:.2f}, max={max_val:.2f}"
                 )
             except Exception:
-                lines.append(f"  - {col} ({col_type}): {sample_str}")
+                lines.append(f"  - {sql_col} ({col_type}): {sample_str}")
 
         elif col_type == "text":
             unique_vals = col_data.unique()
@@ -184,18 +216,18 @@ def build_schema_string(
                 # Low cardinality — show ALL unique values so the LLM knows
                 # exactly what values exist in this column (e.g. region names)
                 val_list = sorted(str(v) for v in unique_vals[:20])
-                lines.append(f"  - {col} ({col_type}): all values = {val_list}")
+                lines.append(f"  - {sql_col} ({col_type}): all values = {val_list}")
             else:
                 # High cardinality — just show 3 samples
                 samples = col_data.head(MAX_SAMPLE_ROWS).tolist()
                 sample_str = ", ".join(str(v) for v in samples)
-                lines.append(f"  - {col} ({col_type}): {sample_str}")
+                lines.append(f"  - {sql_col} ({col_type}): {sample_str}")
 
         else:
             # datetime, boolean — show sample values only
             samples = col_data.head(MAX_SAMPLE_ROWS).tolist()
             sample_str = ", ".join(str(v) for v in samples)
-            lines.append(f"  - {col} ({col_type}): {sample_str}")
+            lines.append(f"  - {sql_col} ({col_type}): {sample_str}")
 
     return "\n".join(lines)
 
