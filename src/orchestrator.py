@@ -1,23 +1,20 @@
 """
-orchestrator.py — wires all pipeline stages into a single callable function.
-"""
-from __future__ import annotations
+orchestrator.py — Pipeline controller for Talk to Data.
 
-"""
-src/orchestrator.py — Pipeline controller for Talk to Data.
+Wires all pipeline stages into a single callable: run_query().
 
-Wires all stages into a single callable: run_query().
-
-Flow (from REFERENCE.md §3):
-  1. generate_sql()      — schema + question → SQL
-  2. is_safe_sql()       — blocklist check
-  3. execute_query()     — DuckDB execution
-  4. generate_answer()   — result rows + question → plain English
-  5. select_and_render() — result DataFrame → Plotly figure
+Flow:
+  1. generate_sql()           — schema + question → SQL (Chain-of-Thought)
+  2. is_safe_sql()            — AST + blocklist safety check
+  3. execute_query()          — DuckDB execution
+     └─ on failure: one self-correction attempt via generate_sql()
+  4. generate_answer_payload() — result rows + question → plain English + XAI data
+  5. select_and_render()      — result DataFrame → Plotly figure
 
 Returns an AnswerResult dataclass. Never raises — all errors are
-captured in AnswerResult.error so the UI can display them gracefully.
+captured in AnswerResult.error so the Streamlit UI can display them.
 """
+from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
@@ -27,12 +24,18 @@ import duckdb
 import pandas as pd
 import plotly.graph_objects as go
 
-from src.answer_generator import AnswerGenerationError, generate_answer
+from src.answer_generator import AnswerGenerationError, generate_answer, generate_answer_payload
 from src.chart_selector import select_and_render
 from src.sql_executor import ExecutionError, SafetyError, execute_query, is_safe_sql
-from src.sql_generator import CANNOT_ANSWER_SENTINEL, SQLGenerationError, generate_sql
+from src.sql_generator import (
+    CANNOT_ANSWER_SENTINEL,
+    AmbiguousQuestionError,
+    SQLGenerationError,
+    generate_sql,
+)
 
 logger = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # Result dataclass
@@ -47,14 +50,19 @@ class AnswerResult:
     without checking for None first (except chart and error).
 
     Attributes:
-        answer:      Plain-English answer from answer_generator, or "".
-        sql:         The SQL query that was executed, or "".
-        chart:       Plotly Figure if a chart was rendered, else None.
-        row_count:   Number of rows in the query result.
-        col_count:   Number of columns in the query result.
-        source_info: Human-readable source line, e.g. "sales.csv · 24 rows".
-        error:       User-friendly error message if anything failed, else "".
-        cannot_answer: True if the LLM said the question is unanswerable.
+        answer:              Plain-English answer from the LLM.
+        sql:                 The SQL query that was executed.
+        chart:               Plotly Figure if a chart was rendered, else None.
+        row_count:           Number of rows in the query result.
+        col_count:           Number of columns in the query result.
+        source_info:         Human-readable source line, e.g. "sales.csv · 24 rows".
+        error:               User-friendly error message if anything failed.
+        cannot_answer:       True if the LLM said the question is unanswerable.
+        columns_used:        List of columns that drove the answer (for XAI expander).
+        assumptions:         Any date/definition assumptions the LLM made.
+        self_corrected:      True if the SQL failed and was auto-corrected.
+        is_ambiguous:        True if the question was too vague for a reliable answer.
+        clarification_needed: The clarifying question to show the user when ambiguous.
     """
 
     answer: str = ""
@@ -65,6 +73,16 @@ class AnswerResult:
     source_info: str = ""
     error: str = ""
     cannot_answer: bool = False
+    # The actual result DataFrame — used to show verified numbers in the XAI expander
+    result_df: Optional[pd.DataFrame] = None
+    # XAI metadata — populated from the structured LLM response
+    columns_used: list = field(default_factory=list)
+    assumptions: str = ""
+    # Self-correction — True if the initial SQL failed and was auto-fixed
+    self_corrected: bool = False
+    # Ambiguity — True if the question needed clarification
+    is_ambiguous: bool = False
+    clarification_needed: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -98,9 +116,15 @@ def run_query(
     if not question or not question.strip():
         return AnswerResult(error="Please enter a question.")
 
-    # ── Step 1: Generate SQL ───────────────────────────────────────────────
+    sql = ""
+    self_corrected = False
+
+    # ── Step 1: Generate SQL (Chain-of-Thought) ────────────────────────────
     try:
         sql = generate_sql(question, schema_str)
+    except AmbiguousQuestionError as exc:
+        # The question was too vague — ask the user to clarify
+        return AnswerResult(is_ambiguous=True, clarification_needed=str(exc))
     except SQLGenerationError as exc:
         logger.error("SQL generation failed: %s", exc)
         return AnswerResult(error=str(exc))
@@ -123,12 +147,31 @@ def run_query(
             error="The generated query contained unsafe operations and was blocked.",
         )
 
-    # ── Step 3: Execute query ──────────────────────────────────────────────
+    # ── Step 3: Execute query — with one self-correction attempt ──────────
     try:
         result_df = execute_query(conn, sql)
-    except ExecutionError as exc:
-        logger.error("Query execution failed: %s", exc)
-        return AnswerResult(sql=sql, error=str(exc))
+    except ExecutionError as first_error:
+        # The SQL had a runtime error (e.g. hallucinated column name).
+        # Try once more: ask the LLM to fix the SQL using the error message.
+        logger.warning("Query failed — attempting self-correction: %s", first_error)
+        correction_question = (
+            f"{question}\n\n"
+            f"[CORRECTION] The previous SQL failed with this error:\n{first_error}\n"
+            f"Previous SQL:\n{sql}\n\n"
+            "Please write corrected SQL that fixes this error."
+        )
+        try:
+            corrected_sql = generate_sql(correction_question, schema_str)
+            if corrected_sql != CANNOT_ANSWER_SENTINEL and is_safe_sql(corrected_sql):
+                result_df = execute_query(conn, corrected_sql)
+                sql = corrected_sql
+                self_corrected = True
+                logger.info("Self-correction succeeded")
+            else:
+                return AnswerResult(sql=sql, error=str(first_error))
+        except Exception:
+            # Correction also failed — return the original error
+            return AnswerResult(sql=sql, error=str(first_error))
 
     if result_df.empty:
         return AnswerResult(
@@ -136,12 +179,12 @@ def run_query(
             error="The query returned no rows. Try a broader question.",
         )
 
-    # ── Step 4: Generate plain-English answer ─────────────────────────────
+    # ── Step 4: Generate plain-English answer (with XAI metadata) ─────────
     try:
-        answer = generate_answer(question, result_df, filename)
+        payload = generate_answer_payload(question, result_df, filename)
     except AnswerGenerationError as exc:
         logger.error("Answer generation failed: %s", exc)
-        # Still return the SQL and data even if answer fails
+        # Return the SQL and data even if the answer step fails
         return AnswerResult(
             sql=sql,
             row_count=len(result_df),
@@ -155,10 +198,14 @@ def run_query(
     source_info = f"{filename} · {len(result_df)} rows analysed"
 
     return AnswerResult(
-        answer=answer,
+        answer=payload.answer,
         sql=sql,
         chart=chart,
         row_count=len(result_df),
         col_count=len(result_df.columns),
         source_info=source_info,
+        result_df=result_df,
+        self_corrected=self_corrected,
+        columns_used=list(payload.columns_used),
+        assumptions=payload.assumptions,
     )

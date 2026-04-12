@@ -18,6 +18,7 @@ import pytest
 from src.orchestrator import AnswerResult, run_query
 from src.sql_generator import CANNOT_ANSWER_SENTINEL
 from src.sql_executor import load_dataframe
+from src.answer_generator import AnswerPayload
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -43,8 +44,9 @@ def conn():
 
 
 def test_run_query_returns_answer_result(conn):
+    good_payload = AnswerPayload(answer=GOOD_ANSWER, columns_used=["region", "revenue"], assumptions="")
     with patch("src.orchestrator.generate_sql", return_value=GOOD_SQL):
-        with patch("src.orchestrator.generate_answer", return_value=GOOD_ANSWER):
+        with patch("src.orchestrator.generate_answer_payload", return_value=good_payload):
             result = run_query(QUESTION, SCHEMA_STR, conn, FILENAME)
 
     assert isinstance(result, AnswerResult)
@@ -54,8 +56,9 @@ def test_run_query_returns_answer_result(conn):
 
 
 def test_run_query_populates_source_info(conn):
+    good_payload = AnswerPayload(answer=GOOD_ANSWER, columns_used=[], assumptions="")
     with patch("src.orchestrator.generate_sql", return_value=GOOD_SQL):
-        with patch("src.orchestrator.generate_answer", return_value=GOOD_ANSWER):
+        with patch("src.orchestrator.generate_answer_payload", return_value=good_payload):
             result = run_query(QUESTION, SCHEMA_STR, conn, FILENAME)
 
     assert FILENAME in result.source_info
@@ -63,8 +66,9 @@ def test_run_query_populates_source_info(conn):
 
 
 def test_run_query_populates_row_and_col_counts(conn):
+    good_payload = AnswerPayload(answer=GOOD_ANSWER, columns_used=[], assumptions="")
     with patch("src.orchestrator.generate_sql", return_value=GOOD_SQL):
-        with patch("src.orchestrator.generate_answer", return_value=GOOD_ANSWER):
+        with patch("src.orchestrator.generate_answer_payload", return_value=good_payload):
             result = run_query(QUESTION, SCHEMA_STR, conn, FILENAME)
 
     assert result.row_count >= 1
@@ -149,7 +153,7 @@ def test_answer_generation_error_returns_sql_in_result(conn):
 
     with patch("src.orchestrator.generate_sql", return_value=GOOD_SQL):
         with patch(
-            "src.orchestrator.generate_answer",
+            "src.orchestrator.generate_answer_payload",
             side_effect=AnswerGenerationError("LLM down"),
         ):
             result = run_query(QUESTION, SCHEMA_STR, conn, FILENAME)

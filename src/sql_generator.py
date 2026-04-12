@@ -1,30 +1,37 @@
 """
-sql_generator.py — Stage 4.
-Converts natural language question + schema into a DuckDB SQL query via LLM.
+sql_generator.py — LLM Call #1: natural language → DuckDB SQL.
+
+Sends the schema string and the user's question to the LLM and returns
+a single SELECT statement that DuckDB can execute against the in-memory
+table named 'data'.
+
+Key improvements over the basic version:
+  - Chain-of-Thought (CoT) prompt: forces the model to reason step-by-step
+    before writing SQL, which significantly improves accuracy.
+  - Today's date is injected so the model can resolve "last month" correctly.
+  - DuckDB-specific functions are explicitly requested (DATE_TRUNC, GROUP BY ALL).
+  - Ambiguous questions trigger a JSON sentinel instead of a guess.
+  - XML tags (<logic>/<sql>) isolate the final SQL from the reasoning trace.
+
+Privacy: the full dataset never leaves this module — only the schema string
+(column names, types, and sample values) is sent to the LLM API.
 """
 from __future__ import annotations
 
-"""
-src/sql_generator.py — LLM Call #1: natural language → SQL query.
-
-Sends the schema string (column names, types, 3 sample rows) plus the
-user's question to the LLM and returns a single SELECT statement that
-DuckDB can execute against the in-memory table named 'data'.
-
-The full dataset never leaves the process — only the schema string is
-sent to the API (privacy guarantee from REFERENCE.md §3).
-"""
-
 import logging
+import re
+from datetime import date
 from typing import Final
 
-from src.llm_client import LLMError, call_llm
+from src.ambiguity_detector import parse_ambiguity
 from src.config import DUCKDB_TABLE_NAME
+from src.llm_client import LLMError, call_llm
 
 logger = logging.getLogger(__name__)
 
+
 # ---------------------------------------------------------------------------
-# Custom exception
+# Custom exceptions
 # ---------------------------------------------------------------------------
 
 
@@ -35,6 +42,14 @@ class SQLGenerationError(Exception):
     """
 
 
+class AmbiguousQuestionError(Exception):
+    """Raised when the question is too vague to generate a reliable SQL query.
+
+    The message contains the clarifying question to show to the user.
+    Example: "Please specify what metric defines 'top' products."
+    """
+
+
 # ---------------------------------------------------------------------------
 # Sentinel returned by the LLM when the question cannot be answered
 # ---------------------------------------------------------------------------
@@ -42,21 +57,49 @@ class SQLGenerationError(Exception):
 CANNOT_ANSWER_SENTINEL: Final[str] = "CANNOT_ANSWER"
 
 # ---------------------------------------------------------------------------
-# System prompt
-# (also documented in docs/prompt_engineering.md)
+# System prompt — Chain-of-Thought version
+#
+# The model is asked to output TWO XML-tagged sections:
+#   <logic>  — its step-by-step reasoning (discarded server-side)
+#   <sql>    — the final SQL query (or a sentinel / ambiguity JSON)
+#
+# We discard the <logic> block so users only see a clean SQL output.
+# The reasoning step dramatically improves accuracy on open-weight models.
 # ---------------------------------------------------------------------------
 
-SQL_SYSTEM_PROMPT: Final[str] = f"""You are a SQL expert. Convert the user's natural-language question into a single DuckDB-compatible SELECT query.
+SQL_SYSTEM_PROMPT: Final[str] = f"""You are an expert DuckDB SQL analyst.
+The table name is always: {DUCKDB_TABLE_NAME}
 
-Rules you MUST follow:
-1. Output ONLY the raw SQL query — no markdown, no backticks, no explanation.
-2. The table name is always: {DUCKDB_TABLE_NAME}
-3. Use only SELECT statements — never INSERT, UPDATE, DELETE, DROP, or any mutation.
-4. Use DuckDB SQL syntax (STRFTIME, DATE_TRUNC, EPOCH, etc. where needed).
-5. Always add an ORDER BY clause when returning multiple rows.
-6. If the question cannot be answered from the schema, output exactly: {CANNOT_ANSWER_SENTINEL}
-7. Column names must match the schema exactly — do not invent columns.
-8. Limit results to 500 rows maximum using LIMIT 500.
+Your job is to convert the user's question into a single DuckDB SELECT query.
+
+Output your response in this EXACT format — always include both tags:
+
+<logic>
+a) What is the question asking? (change / comparison / breakdown / summary)
+b) Which columns do I need from the schema?
+c) What filters or time ranges apply? Use today's date to resolve relative terms like "last month" or "this week".
+d) What aggregation or calculation is needed?
+</logic>
+<sql>
+YOUR SQL QUERY HERE
+</sql>
+
+Rules for the SQL inside <sql> tags:
+1. Only SELECT statements — never INSERT, UPDATE, DELETE, DROP, ALTER, or CREATE.
+2. Use DuckDB syntax:
+   - DATE_TRUNC('month', col) for time bucketing
+   - GROUP BY ALL to group by all non-aggregated columns
+   - SUM(col) FILTER (WHERE condition) for conditional aggregation
+   - CTEs (WITH ...) for period-over-period comparisons
+   - SUM(col) OVER () as a window function for % of total breakdowns
+3. Column names must match the schema exactly — never invent a column.
+4. Add ORDER BY when returning multiple rows.
+5. Limit results to 500 rows with LIMIT 500.
+6. If the question cannot be answered from the schema, put inside <sql>:
+   CANNOT_ANSWER
+7. If the question is ambiguous (e.g. "top products" — top by what metric?),
+   put this JSON inside <sql> instead of SQL:
+   {{"status": "ambiguous", "clarification_needed": "Your specific clarifying question here."}}
 """
 
 
@@ -68,47 +111,58 @@ Rules you MUST follow:
 def generate_sql(question: str, schema_str: str) -> str:
     """Convert a natural-language question into a DuckDB SELECT query.
 
-    Sends the schema string and the user's question to the LLM (via
-    llm_client.call_llm) and returns the SQL string.
+    Injects today's date into the prompt so the model can resolve
+    relative time references like "last month" correctly.
 
     Args:
-        question:   The user's plain-English question, e.g.
-                    "Which region had the highest revenue last month?"
-        schema_str: The schema context string produced by
-                    schema_extractor.extract_schema() — column names,
-                    types, and 3 sample rows. Never contains full data.
+        question:   The user's plain-English question.
+        schema_str: Schema context from schema_extractor (column names,
+                    types, sample values). Never contains raw data.
 
     Returns:
         A DuckDB-compatible SELECT query string, OR the sentinel string
-        "CANNOT_ANSWER" if the LLM determines the question cannot be
-        answered from the available schema.
+        "CANNOT_ANSWER" if the LLM says the question is unanswerable.
 
     Raises:
-        SQLGenerationError: If the LLM call fails or returns an empty
-                            response. Message is user-friendly.
+        AmbiguousQuestionError: If the LLM returns an ambiguity JSON.
+                                Message contains the clarifying question.
+        SQLGenerationError:     If the LLM call fails or returns empty.
     """
     if not question or not question.strip():
         raise SQLGenerationError("Question must not be empty.")
     if not schema_str or not schema_str.strip():
         raise SQLGenerationError("Schema string must not be empty.")
 
-    user_message = f"Schema:\n{schema_str}\n\nQuestion: {question.strip()}"
+    # Inject today's date so the model resolves "last month" correctly
+    today = date.today().isoformat()
+    user_message = (
+        f"Today's date: {today}\n\n"
+        f"Schema:\n{schema_str}\n\n"
+        f"Question: {question.strip()}"
+    )
 
     try:
         raw = call_llm(SQL_SYSTEM_PROMPT, user_message)
     except LLMError as exc:
-        raise SQLGenerationError(
-            f"Could not generate SQL: {exc}"
-        ) from exc
+        raise SQLGenerationError(f"Could not generate SQL: {exc}") from exc
 
-    sql = _clean_sql(raw)
+    # Extract the SQL from the <sql>...</sql> tags in the CoT response
+    sql = _extract_sql_from_cot(raw)
+
+    # Run the cleaned text through markdown fence removal
+    sql = _clean_sql(sql)
 
     if not sql:
         raise SQLGenerationError(
             "The AI returned an empty response. Please rephrase your question."
         )
 
-    logger.debug("Generated SQL: %s", sql)
+    # Check for the ambiguity sentinel (a JSON object instead of SQL)
+    is_ambiguous, clarification = parse_ambiguity(sql)
+    if is_ambiguous:
+        raise AmbiguousQuestionError(clarification)
+
+    logger.debug("Generated SQL: %s", sql[:120])
     return sql
 
 
@@ -117,30 +171,49 @@ def generate_sql(question: str, schema_str: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _extract_sql_from_cot(raw: str) -> str:
+    """Extract just the SQL from a Chain-of-Thought response.
+
+    The model is instructed to wrap its SQL in <sql>...</sql> tags.
+    If the tags are found, only the content inside them is returned.
+    If no tags are found (e.g. older prompts), the whole string is returned
+    so this function is backwards-compatible.
+
+    Args:
+        raw: The full raw response from the LLM.
+
+    Returns:
+        The SQL string, without any <logic> reasoning prefix.
+    """
+    match = re.search(r"<sql>(.*?)</sql>", raw, re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    # Fallback: no XML tags found — return the whole response
+    return raw.strip()
+
+
 def _clean_sql(raw: str) -> str:
-    """Strip markdown fences and extra whitespace from the LLM response.
+    """Strip markdown fences and extra whitespace from a SQL string.
 
     Despite the system prompt saying "no backticks", models sometimes
     wrap output in ```sql ... ``` fences. This removes them defensively.
 
     Args:
-        raw: The raw string returned by the LLM.
+        raw: The raw SQL string (possibly with markdown fences).
 
     Returns:
         Cleaned SQL string, or CANNOT_ANSWER_SENTINEL if that was returned.
     """
     text = raw.strip()
 
-    # If the model returned the sentinel, pass it through unchanged
+    # Pass through the CANNOT_ANSWER sentinel unchanged
     if text.upper() == CANNOT_ANSWER_SENTINEL:
         return CANNOT_ANSWER_SENTINEL
 
-    # Strip common markdown code fences
+    # Remove markdown code fences (```sql ... ``` or ``` ... ```)
     if text.startswith("```"):
         lines = text.splitlines()
-        # Remove opening fence (```sql or ```)
         lines = lines[1:] if lines[0].startswith("```") else lines
-        # Remove closing fence
         if lines and lines[-1].strip() == "```":
             lines = lines[:-1]
         text = "\n".join(lines).strip()

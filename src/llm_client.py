@@ -23,6 +23,15 @@ import logging
 from typing import Optional
 
 import groq  # groq==0.13.1
+
+# Suppress the google-generativeai end-of-life FutureWarning.
+# We intentionally stay on 0.8.x — see REFERENCE.md §8.2 for why.
+import warnings
+warnings.filterwarnings(
+    "ignore",
+    message="All support for the `google.generativeai` package has ended",
+)
+
 import google.generativeai as genai  # google-generativeai==0.8.5
 
 from src.config import (
