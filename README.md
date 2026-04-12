@@ -275,15 +275,11 @@ talk-to-data/
 ├── assets/
 │   ├── sample_data/           # Demo CSV datasets
 │   └── screenshots/           # UI screenshots for this README
-├── docs/
-│   ├── architecture.md        # Extended architecture notes
-│   └── CLAUDE.md  # AI assistant reference for this codebase
 ├── scripts/
 │   └── verify_setup.py        # Confirms all dependencies and API keys
 ├── app.py                     # Streamlit entry point
 ├── requirements.txt           # All dependencies pinned to exact versions
-├── .env.example               # Template for environment variables
-           
+├── .env.example               # Template for environment variables          
 ├── REFERENCE.md               # Full developer reference and progress log
 └── LICENSE                    # Apache 2.0
 ```
