@@ -4,6 +4,8 @@ All other modules import from here. Nothing reads os.environ directly.
 """
 
 import os
+import re
+import unicodedata
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -55,3 +57,33 @@ NATWEST_COLORS: list[str] = [
     "#6a1a99",  # Mid Purple
     "#8B4BA8",  # Light Purple
 ]
+
+
+def slugify_table_name(filename: str) -> str:
+    """Convert a raw filename into a safe, valid SQL table identifier.
+
+    Strips the file extension, normalises unicode, replaces spaces and
+    special characters with underscores, and ensures the name does not
+    start with a digit (SQL identifiers cannot start with a number).
+
+    Example:
+        '2026 Sales Data.xlsx'  ->  'tbl_2026_sales_data'
+        'product catalog.csv'   ->  'product_catalog'
+    """
+    # Drop the file extension
+    name = filename.rsplit(".", 1)[0]
+
+    # Normalise unicode -> closest ASCII equivalent (e.g. naïve -> naive)
+    name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+
+    # Lowercase and replace anything that isn't alphanumeric/space/hyphen
+    name = re.sub(r"[^\w\s-]", "", name).strip().lower()
+
+    # Collapse spaces and hyphens into single underscores
+    name = re.sub(r"[-\s]+", "_", name)
+
+    # SQL identifiers cannot start with a digit
+    if re.match(r"^[0-9]", name):
+        name = "tbl_" + name
+
+    return name or "tbl_data"

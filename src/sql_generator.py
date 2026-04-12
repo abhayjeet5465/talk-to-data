@@ -103,12 +103,44 @@ Rules for the SQL inside <sql> tags:
 """
 
 
+# Multi-table prompt — used when 2 or 3 files are loaded.
+# Single-file prompt above is untouched.
+SQL_SYSTEM_PROMPT_MULTI: Final[str] = """You are an expert DuckDB SQL analyst working with MULTIPLE tables.
+
+The available tables and their columns are described in the schema below.
+Do NOT invent table names or column names — use only what is listed.
+
+Output your response in this EXACT format:
+
+<logic>
+a) Which tables does this question need?
+b) What is the JOIN key between them? (use the SYSTEM INFERRED JOIN KEYS if provided)
+c) What filters, aggregations, or calculations are needed?
+</logic>
+<sql>
+YOUR SQL QUERY HERE
+</sql>
+
+Rules for the SQL inside <sql> tags:
+1. Only SELECT statements — never INSERT, UPDATE, DELETE, DROP, ALTER, or CREATE.
+2. Always alias every table (e.g. FROM sales s LEFT JOIN catalog c ON s.product_id = c.product_id).
+3. Default to LEFT JOIN — never use INNER JOIN unless you are certain both tables are complete.
+4. Column names must match the schema exactly.
+5. Add ORDER BY when returning multiple rows.
+6. Limit results to 500 rows with LIMIT 500.
+7. If the question cannot be answered from the schema, put inside <sql>:
+   CANNOT_ANSWER
+8. If the question is ambiguous, put this JSON inside <sql> instead of SQL:
+   {"status": "ambiguous", "clarification_needed": "Your specific clarifying question here."}
+"""
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 
-def generate_sql(question: str, schema_str: str) -> str:
+def generate_sql(question: str, schema_str: str, multi_table: bool = False) -> str:
     """Convert a natural-language question into a DuckDB SELECT query.
 
     Injects today's date into the prompt so the model can resolve
@@ -142,7 +174,8 @@ def generate_sql(question: str, schema_str: str) -> str:
     )
 
     try:
-        raw = call_llm(SQL_SYSTEM_PROMPT, user_message)
+        prompt = SQL_SYSTEM_PROMPT_MULTI if multi_table else SQL_SYSTEM_PROMPT
+        raw = call_llm(prompt, user_message)
     except LLMError as exc:
         raise SQLGenerationError(f"Could not generate SQL: {exc}") from exc
 

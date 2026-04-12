@@ -14,9 +14,9 @@ st.set_page_config(
 )
 
 from src.config import validate_config
-from src.orchestrator import AnswerResult, run_query
-from src.schema_extractor import SchemaExtractionError, extract_schema
-from src.sql_executor import ExecutionError, load_dataframe
+from src.orchestrator import AnswerResult, run_query, run_query_multi
+from src.schema_extractor import SchemaExtractionError, build_unified_schema, extract_schema
+from src.sql_executor import ExecutionError, load_dataframe, load_multiple_dataframes
 
 # ---------------------------------------------------------------------------
 # Page config — must be the very first Streamlit call in the file
@@ -109,13 +109,18 @@ st.markdown(
 # ---------------------------------------------------------------------------
 
 if "schema_info" not in st.session_state:
-    st.session_state.schema_info = None      # dict from extract_schema()
+    st.session_state.schema_info = None      # dict from extract_schema() — single-file
 if "conn" not in st.session_state:
     st.session_state.conn = None             # duckdb.DuckDBPyConnection
 if "history" not in st.session_state:
     st.session_state.history = []            # list of (question, AnswerResult)
 if "clarification_context" not in st.session_state:
-    st.session_state.clarification_context = None  # (original_q, clarification_msg)
+    st.session_state.clarification_context = None
+# Multi-file state
+if "datasets" not in st.session_state:
+    st.session_state.datasets = {}           # table_name -> schema_info dict
+if "unified_schema" not in st.session_state:
+    st.session_state.unified_schema = ""
 
 # ---------------------------------------------------------------------------
 # Sidebar
@@ -147,51 +152,76 @@ with st.sidebar:
         st.warning(w)
 
     # ── File uploader ──────────────────────────────────────────────────────
-    st.markdown("**1. Upload your dataset**")
-    uploaded_file = st.file_uploader(
-        "CSV or Excel file",
+    # ── File uploader — accepts up to 3 files ─────────────────────────────
+    st.markdown("**1. Upload your dataset(s)**")
+    uploaded_files = st.file_uploader(
+        "CSV or Excel files (max 3)",
         type=["csv", "xlsx", "xls"],
-        help="Your data never leaves your session — only column names are sent to the AI.",
+        accept_multiple_files=True,
+        help="Upload up to 3 files. Your data never leaves your session.",
     )
 
-    if uploaded_file is not None:
-        # Only re-process if a new file was uploaded
-        if (
-            st.session_state.schema_info is None
-            or st.session_state.schema_info.get("filename") != uploaded_file.name
-        ):
-            with st.spinner("Reading file…"):
-                try:
-                    schema_info = extract_schema(uploaded_file)
-                    conn = load_dataframe(schema_info["df"])
-                    st.session_state.schema_info = schema_info
-                    st.session_state.conn = conn
-                    st.session_state.history = []  # reset chat on new file
-                    st.session_state.clarification_context = None
-                    st.success(f"✅ Loaded **{uploaded_file.name}**")
-                except SchemaExtractionError as exc:
-                    st.error(f"Could not read file: {exc}")
-                    st.session_state.schema_info = None
-                    st.session_state.conn = None
-                except ExecutionError as exc:
-                    st.error(f"Could not load data: {exc}")
+    if uploaded_files:
+        # Limit to 3 files
+        if len(uploaded_files) > 3:
+            st.warning("Maximum 3 files allowed. Only the first 3 will be used.")
+            uploaded_files = uploaded_files[:3]
 
-    # ── Dataset info panel ─────────────────────────────────────────────────
-    if st.session_state.schema_info:
-        info = st.session_state.schema_info
+        # Detect which files were removed since last run
+        from src.config import slugify_table_name
+        current_names = {slugify_table_name(f.name) for f in uploaded_files}
+        stale_keys = set(st.session_state.datasets.keys()) - current_names
+        if stale_keys:
+            for k in stale_keys:
+                del st.session_state.datasets[k]
+            st.session_state.history = []
+
+        # Process only newly added files (delta processing)
+        for uf in uploaded_files:
+            table_name = slugify_table_name(uf.name)
+            if table_name not in st.session_state.datasets:
+                with st.spinner(f"Reading {uf.name}…"):
+                    try:
+                        info = extract_schema(uf)
+                        st.session_state.datasets[table_name] = info
+                        st.session_state.history = []  # reset chat on new file
+                        st.session_state.clarification_context = None
+                        st.success(f"✅ Loaded **{uf.name}**")
+                    except SchemaExtractionError as exc:
+                        st.error(f"Could not read {uf.name}: {exc}")
+
+        # Rebuild unified schema and DuckDB connection from all loaded datasets
+        if st.session_state.datasets:
+            st.session_state.unified_schema = build_unified_schema(st.session_state.datasets)
+            try:
+                if len(st.session_state.datasets) == 1:
+                    # Single-file: use existing load_dataframe path
+                    single_info = next(iter(st.session_state.datasets.values()))
+                    st.session_state.conn = load_dataframe(single_info["df"])
+                    st.session_state.schema_info = single_info
+                else:
+                    # Multi-file: register all DataFrames
+                    st.session_state.conn = load_multiple_dataframes(st.session_state.datasets)
+                    st.session_state.schema_info = next(iter(st.session_state.datasets.values()))
+            except ExecutionError as exc:
+                st.error(f"Could not load data: {exc}")
+    elif not uploaded_files and st.session_state.datasets:
+        # User cleared all files
+        st.session_state.datasets = {}
+        st.session_state.unified_schema = ""
+        st.session_state.schema_info = None
+        st.session_state.conn = None
+        st.session_state.history = []
+
+    # ── Dataset info panel ────────────────────────────────────────────────
+    if st.session_state.datasets:
         st.divider()
-        st.markdown("**Dataset info**")
-
-        # Metric pills for rows and columns
-        col1, col2 = st.columns(2)
-        col1.metric("Rows", f"{info['row_count']:,}")
-        col2.metric("Columns", info["col_count"])
-
-        st.caption(f"📄 {info['filename']}")
-
-        with st.expander("Column types"):
-            for col, dtype in info["column_types"].items():
-                st.markdown(f"- `{col}` — {dtype}")
+        st.markdown("**Loaded datasets**")
+        for tname, info in st.session_state.datasets.items():
+            st.caption(f"📄 `{tname}` — {info['row_count']:,} rows · {info['col_count']} cols")
+            with st.expander(f"Columns in {info['filename']}", expanded=False):
+                for col, dtype in info["column_types"].items():
+                    st.markdown(f"- `{col}` — {dtype}")
 
     st.divider()
     st.caption("🔒 Privacy: only column names and sample values are sent to the AI. Your full data stays local.")
@@ -225,24 +255,32 @@ st.divider()
 # ---------------------------------------------------------------------------
 
 def _run_and_store(q: str) -> None:
-    """Run the full pipeline with a step-by-step status trace and store the result."""
-    info = st.session_state.schema_info
+    """Run the full pipeline and store the result in history."""
+    is_multi = len(st.session_state.datasets) > 1
 
-    # st.status shows an animated spinner with step-by-step messages.
-    # All 4 messages appear immediately in the expanded panel while
-    # the pipeline runs, then it collapses to "Analysis complete!".
     with st.status("🔍 Analysing your question...", expanded=True) as status:
         st.write("Reading dataset schema and column structure...")
+        if is_multi:
+            st.write("Planning JOIN across multiple files...")
         st.write("Translating natural language into an optimised DuckDB query...")
         st.write("Executing calculations locally — your data never leaves this session...")
         st.write("Synthesising results into a plain-English explanation...")
 
-        result: AnswerResult = run_query(
-            question=q,
-            schema_str=info["schema_str"],
-            conn=st.session_state.conn,
-            filename=info["filename"],
-        )
+        if is_multi:
+            result: AnswerResult = run_query_multi(
+                question=q,
+                unified_schema=st.session_state.unified_schema,
+                conn=st.session_state.conn,
+                datasets=st.session_state.datasets,
+            )
+        else:
+            info = st.session_state.schema_info
+            result: AnswerResult = run_query(
+                question=q,
+                schema_str=info["schema_str"],
+                conn=st.session_state.conn,
+                filename=info["filename"],
+            )
 
         if result.is_ambiguous:
             status.update(label="🤔 Clarification needed", state="error", expanded=False)
@@ -337,8 +375,15 @@ for q, result in reversed(st.session_state.history):
                     metric_cols[i % 4].metric(label=col_name.replace("_", " ").title(), value=val)
 
         elif result.row_count == 1 and result.col_count == 1:
-            # True single value — show as a big metric card
-            st.metric(label="Result", value=result.answer.split()[0] if result.answer else "—")
+            # True single value — show as a big metric card extracted from the raw data
+            val = "—"
+            if result.result_df is not None and not result.result_df.empty:
+                raw_val = result.result_df.iloc[0, 0]
+                try:
+                    val = f"{int(raw_val):,}" if float(raw_val) == int(float(raw_val)) else f"{float(raw_val):,.2f}"
+                except (ValueError, TypeError):
+                    val = str(raw_val)
+            st.metric(label="Result", value=val)
 
         # ── Source info ────────────────────────────────────────────────
         if result.source_info:
@@ -371,6 +416,13 @@ for q, result in reversed(st.session_state.history):
             if result.result_df is not None and not result.result_df.empty:
                 st.markdown("**🔢 Raw query result (exact numbers)**")
                 st.dataframe(result.result_df, use_container_width=True, hide_index=True)
+
+    # ── Data Lineage expander (multi-file only) ────────────────────────
+    if len(st.session_state.datasets) > 1 and result.sql and "JOIN" in result.sql.upper():
+        with st.expander("📂 Data Lineage — files joined in this answer"):
+            st.markdown("This answer combined data from:")
+            for tname, info in st.session_state.datasets.items():
+                st.markdown(f"- **`{tname}`** → `{info['filename']}`")
 
     st.divider()
 
