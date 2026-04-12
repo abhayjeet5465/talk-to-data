@@ -30,8 +30,8 @@ Many non-technical users struggle to get quick, trustworthy answers from their d
 
 1. **Clone the repository:**
    ```bash
-   git clone <your-repo-link>
-   cd "Talk to Data Natwest Hack"
+   git clone https://github.com/abhayjeet5465/talk-to-data
+   cd talk-to-data
    ```
 
 2. **Set up your environment:**
