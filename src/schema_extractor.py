@@ -35,7 +35,13 @@ def read_file(file) -> pd.DataFrame:
 
     try:
         if filename.endswith(".csv"):
-            df = pd.read_csv(file)
+            # Try UTF-8 first; fall back to latin-1 (covers Windows-1252 /
+            # cp1252 files like the Superstore dataset which contain byte 0xa0).
+            try:
+                df = pd.read_csv(file, encoding="utf-8")
+            except UnicodeDecodeError:
+                file.seek(0)  # rewind before second attempt
+                df = pd.read_csv(file, encoding="latin-1")
         elif filename.endswith((".xlsx", ".xls")):
             df = pd.read_excel(file)
         else:
