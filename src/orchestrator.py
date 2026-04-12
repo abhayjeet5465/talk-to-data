@@ -205,3 +205,107 @@ def run_query(
         columns_used=list(payload.columns_used),
         assumptions=payload.assumptions,
     )
+
+
+def run_query_multi(
+    question: str,
+    unified_schema: str,
+    conn: duckdb.DuckDBPyConnection,
+    datasets: dict,
+) -> AnswerResult:
+    """Run the pipeline when multiple files are loaded.
+
+    Same steps as run_query() but uses the multi-table prompt and
+    builds source_info from all loaded filenames.
+
+    Args:
+        question:       The user's plain-English question.
+        unified_schema: Combined schema string from build_unified_schema().
+        conn:           DuckDB connection with all tables registered.
+        datasets:       dict of table_name -> schema_info (used for source citation).
+    """
+    if not question or not question.strip():
+        return AnswerResult(error="Please enter a question.")
+
+    sql = ""
+    self_corrected = False
+
+    # ── Step 1: Generate SQL (multi-table prompt) ──────────────────────────
+    try:
+        sql = generate_sql(question, unified_schema, multi_table=True)
+    except AmbiguousQuestionError as exc:
+        return AnswerResult(is_ambiguous=True, clarification_needed=str(exc))
+    except SQLGenerationError as exc:
+        logger.error("SQL generation failed: %s", exc)
+        return AnswerResult(error=str(exc))
+
+    if sql == CANNOT_ANSWER_SENTINEL:
+        return AnswerResult(
+            cannot_answer=True,
+            error="This question can't be answered from the available data.",
+        )
+
+    # ── Step 2: Safety check ───────────────────────────────────────────────
+    if not is_safe_sql(sql):
+        return AnswerResult(
+            sql=sql,
+            error="The generated query contained unsafe operations and was blocked.",
+        )
+
+    # ── Step 3: Execute — with one self-correction attempt ─────────────────
+    try:
+        result_df = execute_query(conn, sql)
+    except ExecutionError as first_error:
+        logger.warning("Multi-table query failed — attempting self-correction: %s", first_error)
+        correction_question = (
+            f"{question}\n\n"
+            f"[CORRECTION] The previous SQL failed with this error:\n{first_error}\n"
+            f"Previous SQL:\n{sql}\n\n"
+            "Please write corrected SQL that fixes this error."
+        )
+        try:
+            corrected_sql = generate_sql(correction_question, unified_schema, multi_table=True)
+            if corrected_sql != CANNOT_ANSWER_SENTINEL and is_safe_sql(corrected_sql):
+                result_df = execute_query(conn, corrected_sql)
+                sql = corrected_sql
+                self_corrected = True
+            else:
+                return AnswerResult(sql=sql, error=str(first_error))
+        except Exception:
+            return AnswerResult(sql=sql, error=str(first_error))
+
+    if result_df.empty:
+        return AnswerResult(
+            sql=sql,
+            error="The query returned no rows. The files may not share a clear relationship on that question.",
+        )
+
+    # ── Step 4: Generate plain-English answer ──────────────────────────────
+    filenames = " + ".join(info["filename"] for info in datasets.values())
+    try:
+        payload = generate_answer_payload(question, result_df, filenames)
+    except AnswerGenerationError as exc:
+        return AnswerResult(
+            sql=sql,
+            row_count=len(result_df),
+            col_count=len(result_df.columns),
+            error=str(exc),
+        )
+
+    # ── Step 5: Render chart ───────────────────────────────────────────────
+    chart = select_and_render(result_df, question)
+
+    source_info = f"{filenames} · {len(result_df)} rows analysed"
+
+    return AnswerResult(
+        answer=payload.answer,
+        sql=sql,
+        chart=chart,
+        row_count=len(result_df),
+        col_count=len(result_df.columns),
+        source_info=source_info,
+        result_df=result_df,
+        self_corrected=self_corrected,
+        columns_used=list(payload.columns_used),
+        assumptions=payload.assumptions,
+    )

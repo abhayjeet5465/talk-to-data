@@ -86,6 +86,31 @@ def load_dataframe(df: pd.DataFrame) -> duckdb.DuckDBPyConnection:
         raise ExecutionError(f"Failed to load data into DuckDB: {exc}") from exc
 
 
+def load_multiple_dataframes(datasets: dict) -> duckdb.DuckDBPyConnection:
+    """Load multiple DataFrames into a single in-memory DuckDB connection.
+
+    Each key in datasets becomes the SQL table name. Used for multi-file mode.
+
+    Args:
+        datasets: dict mapping table_name (str) -> schema_info dict.
+                  The DataFrame is read from datasets[name]["df"].
+
+    Returns:
+        A live DuckDB connection with all DataFrames registered as tables.
+
+    Raises:
+        ExecutionError: If any DataFrame cannot be registered.
+    """
+    try:
+        conn = duckdb.connect()
+        for table_name, info in datasets.items():
+            conn.register(table_name, info["df"])
+            logger.debug("Registered '%s' (%d rows)", table_name, len(info["df"]))
+        return conn
+    except Exception as exc:
+        raise ExecutionError(f"Failed to load datasets into DuckDB: {exc}") from exc
+
+
 def is_safe_sql(sql: str) -> bool:
     """Return True only if the SQL is a safe, read-only SELECT statement.
 

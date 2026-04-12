@@ -226,3 +226,73 @@ def extract_schema(file) -> dict:
         "row_count": len(df),
         "col_count": len(df.columns),
     }
+
+
+# ---------------------------------------------------------------------------
+# Multi-file helpers (additive — single-file path above is untouched)
+# ---------------------------------------------------------------------------
+
+
+def infer_join_keys(datasets: dict) -> list[str]:
+    """Find columns with the same name and compatible types across tables.
+
+    Args:
+        datasets: dict mapping table_name -> schema_info dict
+                  (as returned by extract_schema).
+
+    Returns:
+        List of hint strings, e.g.
+        ["sales.product_id <-> catalog.product_id (type: text)"]
+    """
+    hints = []
+    table_names = list(datasets.keys())
+
+    for i in range(len(table_names)):
+        for j in range(i + 1, len(table_names)):
+            t1, t2 = table_names[i], table_names[j]
+            cols1 = datasets[t1]["column_types"]
+            cols2 = datasets[t2]["column_types"]
+
+            for col in cols1:
+                if col in cols2 and cols1[col] == cols2[col]:
+                    hints.append(
+                        f"{t1}.{col} <-> {t2}.{col} (type: {cols1[col]})"
+                    )
+
+    return hints
+
+
+def build_unified_schema(datasets: dict) -> str:
+    """Build a single schema string covering all loaded tables.
+
+    Formats each table with its name, source file, row/col counts, and
+    columns, then appends auto-detected join-key hints.
+
+    Args:
+        datasets: dict mapping table_name -> schema_info dict.
+
+    Returns:
+        A multi-line string ready to inject into the LLM prompt.
+    """
+    lines = [
+        f"DATABASE SCHEMA: {len(datasets)} active table(s).",
+        "",
+    ]
+
+    for i, (table_name, info) in enumerate(datasets.items(), start=1):
+        lines.append(f"Table {i}: {table_name}  (source: {info['filename']})")
+        lines.append(f"Rows: {info['row_count']}  Columns: {info['col_count']}")
+        lines.append("Columns:")
+        for col, col_type in info["column_types"].items():
+            lines.append(f"  - {col} ({col_type})")
+        lines.append("")
+
+    join_hints = infer_join_keys(datasets)
+    if join_hints:
+        lines.append("SYSTEM INFERRED JOIN KEYS (use these for ON clauses):")
+        for hint in join_hints:
+            lines.append(f"  * {hint}")
+    else:
+        lines.append("SYSTEM INFERRED JOIN KEYS: none detected automatically.")
+
+    return "\n".join(lines)
