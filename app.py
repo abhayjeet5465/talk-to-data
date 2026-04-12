@@ -1,24 +1,17 @@
-from __future__ import annotations
+
 
 """
 app.py — Streamlit frontend for Talk to Data.
-
-UI only — no business logic lives here. All data processing is
-delegated to src/orchestrator.py and the pipeline modules.
-
-Layout:
-  Sidebar    — file uploader + dataset info panel + config warnings
-  Main area  — step-by-step processing trace (st.status)
-               answer card
-               Plotly chart
-               XAI "How was this calculated?" expander (SQL + columns used + assumptions)
-               ambiguity prompt when the question is too vague
-
-Run with:
-    streamlit run app.py
 """
-
+from __future__ import annotations
 import streamlit as st
+
+st.set_page_config(
+    page_title="Talk to Data | NatWest",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 from src.config import validate_config
 from src.orchestrator import AnswerResult, run_query
@@ -29,12 +22,12 @@ from src.sql_executor import ExecutionError, load_dataframe
 # Page config — must be the very first Streamlit call in the file
 # ---------------------------------------------------------------------------
 
-st.set_page_config(
-    page_title="Talk to Data | NatWest",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+# st.set_page_config(
+#     page_title="Talk to Data | NatWest",
+#     page_icon="📊",
+#     layout="wide",
+#     initial_sidebar_state="expanded",
+# )
 
 # ---------------------------------------------------------------------------
 # Custom CSS — NatWest enterprise styling

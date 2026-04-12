@@ -68,19 +68,15 @@ class AnswerResult:
     answer: str = ""
     sql: str = ""
     chart: Optional[go.Figure] = None
+    result_df: Optional[pd.DataFrame] = None
     row_count: int = 0
     col_count: int = 0
     source_info: str = ""
     error: str = ""
     cannot_answer: bool = False
-    # The actual result DataFrame — used to show verified numbers in the XAI expander
-    result_df: Optional[pd.DataFrame] = None
-    # XAI metadata — populated from the structured LLM response
-    columns_used: list = field(default_factory=list)
+    columns_used: list[str] = field(default_factory=list)
     assumptions: str = ""
-    # Self-correction — True if the initial SQL failed and was auto-fixed
     self_corrected: bool = False
-    # Ambiguity — True if the question needed clarification
     is_ambiguous: bool = False
     clarification_needed: str = ""
 
