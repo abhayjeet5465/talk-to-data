@@ -46,7 +46,7 @@ st.markdown(
       /* ── Remove default Streamlit chrome ─────────────────────────── */
       #MainMenu  { visibility: hidden; }
       footer     { visibility: hidden; }
-      header     { visibility: hidden; }
+      [data-testid="stHeader"] { background: transparent; }  /* keeps the sidebar expand button */
 
       /* ── NatWest sidebar gradient ─────────────────────────────────── */
       [data-testid="stSidebar"] {
