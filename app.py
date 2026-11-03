@@ -416,7 +416,7 @@ def _data_panel() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _render_answer(result: AnswerResult) -> None:
+def _render_answer(result: AnswerResult, key: str) -> None:
     if result.is_ambiguous:
         st.markdown(_md_safe(f"I need one detail to answer this precisely: {result.clarification_needed}"))
         st.caption("Reply below — I'll keep your original question in mind.")
@@ -432,7 +432,7 @@ def _render_answer(result: AnswerResult) -> None:
         if result.chart is not None:
             # The question sits right above, so the chart needs no title
             result.chart.update_layout(title_text="", margin_t=12)
-            st.plotly_chart(result.chart, width="stretch")
+            st.plotly_chart(result.chart, width="stretch", key=key)
         elif df is not None and result.row_count == 1 and result.col_count == 1:
             st.metric(label=str(df.columns[0]).replace("_", " ").title(), value=_fmt_number(df.iloc[0, 0]))
         elif df is not None and result.row_count == 1:
@@ -495,11 +495,11 @@ else:
         st.caption("This chat has no data. Upload a file to keep asking.")
         _uploader("Upload data for this chat")
 
-for q, result in chat["history"]:
+for i, (q, result) in enumerate(chat["history"]):
     with st.chat_message("user", avatar=":material/person:"):
         st.markdown(_md_safe(q))
     with st.chat_message("assistant", avatar=":material/auto_awesome:"):
-        _render_answer(result)
+        _render_answer(result, f"chart_{st.session_state.active_chat}_{i}")
 
 pending = None
 if not chat["history"]:
