@@ -295,45 +295,11 @@ def _run_and_store(q: str) -> None:
 
     st.session_state.history.append((q, result))
 
-# ── Clarification flow — handles ambiguous questions ──────────────────────
-# Shown inline above the chat input. History stays visible below.
-if st.session_state.clarification_context:
-    original_q, clarification_msg = st.session_state.clarification_context
-    st.warning(f"🤔 **Clarification needed:** {clarification_msg}")
-    st.caption(f"Original question: *{original_q}*")
-    refined = st.text_input(
-        "Please refine your question to include the missing detail:",
-        key="clarification_input",
-        placeholder="e.g. Show top products by total revenue.",
-    )
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        if st.button("Ask", key="ask_clarification"):
-            if refined.strip():
-                st.session_state.clarification_context = None
-                _run_and_store(refined.strip())
-                # Rerun immediately so the new answer renders in the history section
-                st.rerun()
-    with col2:
-        if st.button("Cancel", key="cancel_clarification"):
-            st.session_state.clarification_context = None
-            st.rerun()
-    # NOTE: No st.stop() here — old chat history continues to display below.
-
-# ── Question input ─────────────────────────────────────────────────────────
-st.markdown("**2. Ask your question**")
-question = st.chat_input("e.g. Which region had the highest revenue last month?")
-
-
-# ── Run the pipeline when the user submits a question ─────────────────────
-if question:
-    _run_and_store(question)
-
 # ---------------------------------------------------------------------------
-# Display history — most recent answer shown first
+# Display history — oldest first, newest at the bottom like a chat
 # ---------------------------------------------------------------------------
 
-for q, result in reversed(st.session_state.history):
+for q, result in st.session_state.history:
 
     # Question badge
     st.markdown(f'<div class="question-badge">❓ {q}</div>', unsafe_allow_html=True)
@@ -426,11 +392,47 @@ for q, result in reversed(st.session_state.history):
 
     st.divider()
 
+# ── Clarification flow — handles ambiguous questions ──────────────────────
+# Shown below the history, just above the chat input.
+if st.session_state.clarification_context:
+    original_q, clarification_msg = st.session_state.clarification_context
+    st.warning(f"🤔 **Clarification needed:** {clarification_msg}")
+    st.caption(f"Original question: *{original_q}*")
+    refined = st.text_input(
+        "Please refine your question to include the missing detail:",
+        key="clarification_input",
+        placeholder="e.g. Show top products by total revenue.",
+    )
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        if st.button("Ask", key="ask_clarification"):
+            if refined.strip():
+                st.session_state.clarification_context = None
+                _run_and_store(refined.strip())
+                # Rerun immediately so the new answer renders in the history section
+                st.rerun()
+    with col2:
+        if st.button("Cancel", key="cancel_clarification"):
+            st.session_state.clarification_context = None
+            st.rerun()
+    # NOTE: No st.stop() here — chat history stays visible above.
+
+# ── Question input ─────────────────────────────────────────────────────────
+st.markdown("**2. Ask your question**")
+question = st.chat_input("e.g. Which region had the highest revenue last month?")
+
+
+# ── Run the pipeline when the user submits a question ─────────────────────
+if question:
+    _run_and_store(question)
+    st.rerun()  # redraw so the new answer joins the history above
+
+
 # ── Empty state — file loaded but no questions yet ─────────────────────────
 if st.session_state.schema_info and not st.session_state.history:
     st.markdown(
         '<div style="text-align:center; opacity:0.5; padding: 2rem 0;">'
-        "Type a question above to get started ↑"
+        "Type a question below to get started ↓"
         "</div>",
         unsafe_allow_html=True,
     )
