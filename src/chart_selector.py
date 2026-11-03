@@ -12,8 +12,8 @@ Selection rules:
   multiple numeric, no text      → None  (UI shows raw table)
   anything else                  → None  (UI shows raw table)
 
-All charts use the NatWest official brand colours and a consistent dark
-transparent background so they integrate with the app's dark CSS theme.
+All charts share one light, neutral theme and the validated CHART_COLORS
+palette so they read as one system.
 
 Returns a Plotly Figure or None. Never raises — on any unexpected input
 it logs a warning and returns None so the UI can fall back gracefully.
@@ -27,7 +27,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-from src.config import NATWEST_COLORS
+from src.config import CHART_COLORS
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ def select_and_render(
         question:  The user's original question (used only for chart titles).
 
     Returns:
-        A Plotly Figure styled with NatWest brand colours, or None.
+        A styled Plotly Figure, or None.
     """
     if result_df is None or result_df.empty:
         logger.debug("chart_selector: empty DataFrame — returning None")
@@ -93,6 +93,12 @@ def _choose_chart(df: pd.DataFrame, question: str) -> Optional[go.Figure]:
         logger.debug("chart_selector: single metric — returning None")
         return None
 
+    # Rule 1b — any single row → no chart; one bar or point says nothing the
+    # number doesn't (the UI shows metric tiles instead)
+    if rows == 1:
+        logger.debug("chart_selector: single row — returning None")
+        return None
+
     # Rule 2 — date + numeric → line chart (trend over time)
     # Require at least 2 rows — a single point produces a meaningless dot.
     if date_cols and numeric_cols and rows > 1:
@@ -119,37 +125,26 @@ def _choose_chart(df: pd.DataFrame, question: str) -> Optional[go.Figure]:
 
 
 # ---------------------------------------------------------------------------
-# NatWest brand theme — applied to every chart
+# Shared chart theme — applied to every chart
 # ---------------------------------------------------------------------------
 
 
-def _apply_natwest_theme(fig: go.Figure, title: str = "") -> go.Figure:
-    """Apply NatWest brand styling to any Plotly figure.
-
-    Sets transparent backgrounds, Inter font, and brand-consistent
-    grid lines so charts blend with the app's dark CSS theme.
-
-    Args:
-        fig:   Any Plotly Figure.
-        title: Optional chart title to apply.
-
-    Returns:
-        The same figure with NatWest styling applied.
-    """
+def _apply_theme(fig: go.Figure, title: str = "") -> go.Figure:
+    """Apply the shared light theme: transparent surface, quiet grid, ink text."""
+    axis = dict(gridcolor="#ececf0", zerolinecolor="#d4d4d8", linecolor="#d4d4d8", showgrid=True)
     fig.update_layout(
-        font_family="Inter, sans-serif",
-        # Transparent backgrounds blend with the dark CSS card
+        font_family="Inter, system-ui, sans-serif",
+        font_color="#3f3f46",
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
-        font_color="#e0e0e0",
         title_text=title if title else None,
-        title_font_size=15,
-        title_font_color="#F78E99",
-        margin=dict(l=20, r=20, t=45, b=20),
-        # Subtle grid lines — visible but not distracting
-        xaxis=dict(gridcolor="rgba(255,255,255,0.08)", showgrid=True),
-        yaxis=dict(gridcolor="rgba(255,255,255,0.08)", showgrid=True),
+        title_font_size=14,
+        title_font_color="#18181b",
+        margin=dict(l=12, r=12, t=40 if title else 12, b=12),
+        xaxis=axis,
+        yaxis=axis,
         showlegend=False,
+        hoverlabel=dict(bgcolor="#ffffff", bordercolor="#e4e4e7", font_color="#18181b"),
     )
     return fig
 
@@ -176,10 +171,10 @@ def _bar_chart(
         y=x_col,
         orientation="h",
         labels={y_col: _prettify(y_col), x_col: _prettify(x_col)},
-        # Use the NatWest colour palette for bars
-        color_discrete_sequence=NATWEST_COLORS,
+        color_discrete_sequence=CHART_COLORS[:1],  # one series, one colour
     )
-    fig = _apply_natwest_theme(fig, title)
+    fig = _apply_theme(fig, title)
+    fig.update_traces(marker_line_width=0)
     # Hide the colour axis scale bar — not needed for single-colour bars
     fig.update_coloraxes(showscale=False)
     return fig
@@ -199,9 +194,10 @@ def _line_chart(
         y=y_col,
         labels={y_col: _prettify(y_col), x_col: _prettify(x_col)},
         markers=True,
-        color_discrete_sequence=[NATWEST_COLORS[1]],  # NatWest red line
+        color_discrete_sequence=CHART_COLORS[:1],
     )
-    fig = _apply_natwest_theme(fig, title)
+    fig = _apply_theme(fig, title)
+    fig.update_traces(line_width=2, marker_size=8)
     return fig
 
 
@@ -216,9 +212,10 @@ def _pie_chart(
         df,
         names=names_col,
         values=values_col,
-        color_discrete_sequence=NATWEST_COLORS,
+        color_discrete_sequence=CHART_COLORS,
     )
-    fig = _apply_natwest_theme(fig, title)
+    fig = _apply_theme(fig, title)
+    fig.update_traces(marker_line_color="#ffffff", marker_line_width=2)
     # Show legend for pie charts — important for readability
     fig.update_layout(showlegend=True)
     return fig

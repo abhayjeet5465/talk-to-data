@@ -177,3 +177,26 @@ def test_answer_result_default_values():
     assert r.source_info == ""
     assert r.error == ""
     assert r.cannot_answer is False
+
+# ---------------------------------------------------------------------------
+# Chat memory — earlier turns reach SQL generation, not the answer
+# ---------------------------------------------------------------------------
+
+
+def test_context_is_sent_to_sql_generation_only(conn):
+    payload = AnswerPayload(answer=GOOD_ANSWER, columns_used=["region"], assumptions="")
+    context = "User: total revenue by region?"
+    with patch("src.orchestrator.generate_sql", return_value=GOOD_SQL) as gen, patch(
+        "src.orchestrator.generate_answer_payload", return_value=payload
+    ) as answer:
+        run_query("what about the top one?", SCHEMA_STR, conn, FILENAME, context=context)
+
+    sent = gen.call_args.args[0]
+    assert sent.startswith(context) and sent.endswith("Current question: what about the top one?")
+    assert answer.call_args.args[0] == "what about the top one?"
+
+
+def test_no_context_leaves_question_unchanged(conn):
+    with patch("src.orchestrator.generate_sql", return_value=CANNOT_ANSWER_SENTINEL) as gen:
+        run_query(QUESTION, SCHEMA_STR, conn, FILENAME)
+    assert gen.call_args.args[0] == QUESTION

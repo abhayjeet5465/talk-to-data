@@ -47,15 +47,17 @@ def validate_config() -> list[str]:
     return warnings
 
 
-# NatWest official brand colours — used in all Plotly charts
-# Source: https://www.schemecolor.com/natwest-logo-colors.php
-NATWEST_COLORS: list[str] = [
-    "#401664",  # Dark Grape (primary purple)
-    "#EE2033",  # Funky Red (primary red)
-    "#F78E99",  # Fresh Light Red (light pink)
-    "#C20000",  # Guardsman Red (dark red)
-    "#6a1a99",  # Mid Purple
-    "#8B4BA8",  # Light Purple
+# Categorical chart palette, in fixed order (validated for colour-blind
+# separation on a light surface). Single-series charts use slot 1 only.
+CHART_COLORS: list[str] = [
+    "#2a78d6",  # blue
+    "#eb6834",  # orange
+    "#1baf7a",  # aqua
+    "#eda100",  # yellow
+    "#e87ba4",  # magenta
+    "#008300",  # green
+    "#6250d6",  # violet
+    "#e34948",  # red
 ]
 
 

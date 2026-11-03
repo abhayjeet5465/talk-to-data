@@ -3,7 +3,7 @@
 # All packages are Apache 2.0, MIT, or BSD-3 licensed
 
 # UI framework
-streamlit>=1.45.0
+streamlit>=1.50.0
 
 # Data processing
 pandas>=2.2.3

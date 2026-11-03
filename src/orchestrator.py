@@ -81,6 +81,13 @@ class AnswerResult:
     clarification_needed: str = ""
 
 
+def _with_context(question: str, context: str) -> str:
+    """Prefix earlier chat turns so follow-up questions can be resolved."""
+    if not context.strip():
+        return question
+    return f"{context.strip()}\n\nCurrent question: {question}"
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -91,6 +98,7 @@ def run_query(
     schema_str: str,
     conn: duckdb.DuckDBPyConnection,
     filename: str,
+    context: str = "",
 ) -> AnswerResult:
     """Run the full question→answer pipeline and return an AnswerResult.
 
@@ -104,6 +112,8 @@ def run_query(
         conn:       Live DuckDB connection from sql_executor.load_dataframe(),
                     stored in Streamlit session_state between questions.
         filename:   Original uploaded filename for source citation.
+        context:    Earlier turns of this chat, so follow-ups resolve. Sent
+                    only to SQL generation; the answer sees the plain question.
 
     Returns:
         An AnswerResult with all fields populated. On failure, .error
@@ -112,12 +122,13 @@ def run_query(
     if not question or not question.strip():
         return AnswerResult(error="Please enter a question.")
 
+    sql_question = _with_context(question, context)
     sql = ""
     self_corrected = False
 
     # ── Step 1: Generate SQL (Chain-of-Thought) ────────────────────────────
     try:
-        sql = generate_sql(question, schema_str)
+        sql = generate_sql(sql_question, schema_str)
     except AmbiguousQuestionError as exc:
         # The question was too vague — ask the user to clarify
         return AnswerResult(is_ambiguous=True, clarification_needed=str(exc))
@@ -151,7 +162,7 @@ def run_query(
         # Try once more: ask the LLM to fix the SQL using the error message.
         logger.warning("Query failed — attempting self-correction: %s", first_error)
         correction_question = (
-            f"{question}\n\n"
+            f"{sql_question}\n\n"
             f"[CORRECTION] The previous SQL failed with this error:\n{first_error}\n"
             f"Previous SQL:\n{sql}\n\n"
             "Please write corrected SQL that fixes this error."
@@ -212,6 +223,7 @@ def run_query_multi(
     unified_schema: str,
     conn: duckdb.DuckDBPyConnection,
     datasets: dict,
+    context: str = "",
 ) -> AnswerResult:
     """Run the pipeline when multiple files are loaded.
 
@@ -223,16 +235,18 @@ def run_query_multi(
         unified_schema: Combined schema string from build_unified_schema().
         conn:           DuckDB connection with all tables registered.
         datasets:       dict of table_name -> schema_info (used for source citation).
+        context:        Earlier turns of this chat (see run_query).
     """
     if not question or not question.strip():
         return AnswerResult(error="Please enter a question.")
 
+    sql_question = _with_context(question, context)
     sql = ""
     self_corrected = False
 
     # ── Step 1: Generate SQL (multi-table prompt) ──────────────────────────
     try:
-        sql = generate_sql(question, unified_schema, multi_table=True)
+        sql = generate_sql(sql_question, unified_schema, multi_table=True)
     except AmbiguousQuestionError as exc:
         return AnswerResult(is_ambiguous=True, clarification_needed=str(exc))
     except SQLGenerationError as exc:
@@ -258,7 +272,7 @@ def run_query_multi(
     except ExecutionError as first_error:
         logger.warning("Multi-table query failed — attempting self-correction: %s", first_error)
         correction_question = (
-            f"{question}\n\n"
+            f"{sql_question}\n\n"
             f"[CORRECTION] The previous SQL failed with this error:\n{first_error}\n"
             f"Previous SQL:\n{sql}\n\n"
             "Please write corrected SQL that fixes this error."

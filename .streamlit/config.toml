@@ -1,0 +1,14 @@
+# Design tokens Streamlit applies natively. Mirrors the CSS tokens in app.py.
+[theme]
+base = "light"
+primaryColor = "#2a78d6"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f6f6f8"
+textColor = "#18181b"
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"
+
+[server]
+maxUploadSize = 50  # MB, matches MAX_FILE_SIZE_MB
