@@ -15,6 +15,7 @@ uploaded data private but means a page refresh starts over.
 from __future__ import annotations
 
 import html
+import time
 import uuid
 
 import streamlit as st
@@ -34,9 +35,10 @@ from src.sql_executor import ExecutionError, load_dataframe, load_multiple_dataf
 MAX_FILES_PER_CHAT = 3
 CONTEXT_TURNS = 4  # earlier turns sent with each question for follow-ups
 STARTER_QUESTIONS = [
-    "Give me a summary of the key numbers in this data",
-    "What are the top 5 categories by total value?",
-    "How has the main metric changed over time?",
+    (":material/show_chart:", "Show the main trend over time"),
+    (":material/leaderboard:", "Top 5 categories by total value"),
+    (":material/compare_arrows:", "Compare the groups side by side"),
+    (":material/summarize:", "Give me a summary of the data"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -46,63 +48,130 @@ STARTER_QUESTIONS = [
 st.markdown(
     """
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
       :root {
-        --tt-ink: #18181b;          /* primary text */
-        --tt-ink-2: #52525b;        /* secondary text */
-        --tt-ink-3: #8b8b94;        /* muted text, captions */
-        --tt-surface: #ffffff;      /* page */
-        --tt-surface-2: #f6f6f8;    /* sidebar, subtle panels */
-        --tt-border: #e4e4e7;
-        --tt-accent: #2a78d6;
-        --tt-accent-soft: #eaf2fc;
-        --tt-radius: 10px;
+        /* Obsidian side panel */
+        --tt-obsidian: #0a0a0b;
+        --tt-obsidian-line: #232327;
+        --tt-on-obsidian: #e7e7ea;
+        --tt-on-obsidian-2: #8d8d96;
+        /* Silver chrome */
+        --tt-chrome: linear-gradient(135deg, #fbfbfc 0%, #d9dadd 28%, #9c9da3 50%, #e9e9ec 68%, #b4b5ba 100%);
+        --tt-silver: #c3c4c9;
+        /* White main, black ink */
+        --tt-ink: #0a0a0b;
+        --tt-ink-2: #52525b;
+        --tt-ink-3: #8b8b94;
+        --tt-surface: #ffffff;
+        --tt-surface-2: #f7f7f8;
+        --tt-border: #e6e6ea;
+        --tt-radius: 12px;
+        --tt-radius-lg: 18px;
+        --tt-shadow: 0 1px 2px rgba(10,10,11,0.04), 0 4px 16px rgba(10,10,11,0.05);
         --tt-space-1: 4px; --tt-space-2: 8px; --tt-space-3: 12px; --tt-space-4: 16px; --tt-space-6: 24px;
       }
 
-      html, body, [class*="css"], .stMarkdown, .stChatMessage { font-family: 'Inter', system-ui, sans-serif; }
+      html, body, [class*="css"], .stMarkdown, .stChatMessage, button, input, textarea {
+        font-family: 'Inter', system-ui, sans-serif;
+      }
 
-      /* Chrome: keep the header (it holds the sidebar toggle) but make it quiet */
+      /* Keep the header (it holds the sidebar toggle) but make it quiet */
       #MainMenu, footer { visibility: hidden; }
       [data-testid="stHeader"] { background: transparent; }
+      .block-container { max-width: 980px; padding-top: 2.2rem; padding-bottom: 7rem; }
 
-      /* Readable chat column, like ChatGPT/Claude */
-      .block-container { max-width: 880px; padding-top: 2.5rem; padding-bottom: 7rem; }
-
-      /* Sidebar */
-      [data-testid="stSidebar"] { background: var(--tt-surface-2); border-right: 1px solid var(--tt-border); }
+      /* ── Obsidian side panel with a chrome sheen ─────────────────────── */
+      [data-testid="stSidebar"] {
+        background:
+          radial-gradient(90% 32% at 105% -4%, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.05) 38%, transparent 60%),
+          radial-gradient(70% 22% at -10% 102%, rgba(255,255,255,0.10) 0%, transparent 60%),
+          linear-gradient(180deg, #121214 0%, var(--tt-obsidian) 55%, #050506 100%);
+        border-right: 1px solid var(--tt-obsidian-line);
+      }
+      [data-testid="stSidebar"] hr { border-color: var(--tt-obsidian-line); }
       [data-testid="stSidebar"] .stButton button,
       [data-testid="stSidebar"] .stButton button > div { justify-content: flex-start; text-align: left; }
       [data-testid="stSidebar"] .stButton button p {
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem;
       }
-      .tt-brand { display: flex; align-items: center; gap: var(--tt-space-2);
-                  font-weight: 700; font-size: 1.05rem; color: var(--tt-ink); padding: var(--tt-space-1) 0 var(--tt-space-3); }
-      .tt-brand-mark { width: 26px; height: 26px; border-radius: 7px; background: var(--tt-ink);
-                       display: grid; place-items: center; }
+      /* New chat: polished chrome */
+      [data-testid="stSidebar"] button[data-testid="stBaseButton-primary"] {
+        background: var(--tt-chrome); color: var(--tt-ink); border: 1px solid rgba(255,255,255,0.7);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 6px 18px rgba(0,0,0,0.45);
+        border-radius: 12px; min-height: 44px;
+      }
+      [data-testid="stSidebar"] button[data-testid="stBaseButton-primary"] p,
+      [data-testid="stSidebar"] button[data-testid="stBaseButton-primary"] span { font-weight: 650; color: var(--tt-ink); }
+      [data-testid="stSidebar"] button[data-testid="stBaseButton-primary"]:hover { filter: brightness(1.06); }
+      /* Chat list */
+      [data-testid="stSidebar"] button[data-testid="stBaseButton-tertiary"] { color: var(--tt-on-obsidian); padding: 6px 10px; border-radius: 10px; }
+      [data-testid="stSidebar"] button[data-testid="stBaseButton-tertiary"]:hover { background: rgba(255,255,255,0.06); color: #fff; }
+      [data-testid="stSidebar"] button[data-testid="stBaseButton-secondary"] {
+        background: rgba(255,255,255,0.07); color: #fff; border: 1px solid rgba(195,196,201,0.28); border-radius: 10px;
+      }
+      [data-testid="stSidebar"] [data-testid="stPopover"] button {
+        background: transparent; color: var(--tt-on-obsidian); border: 1px solid var(--tt-obsidian-line); border-radius: 10px;
+      }
+      [data-testid="stSidebar"] [data-testid="stCaptionContainer"] { color: var(--tt-on-obsidian-2); }
+
+      .tt-brand { display: flex; align-items: center; gap: 12px; padding: 2px 0 18px; }
+      .tt-brand-name { font-weight: 700; font-size: 1.12rem; color: #fff; line-height: 1.1; }
+      .tt-brand-sub { font-size: 0.75rem; color: var(--tt-on-obsidian-2); margin-top: 3px; }
       .tt-section { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
                     color: var(--tt-ink-3); margin: var(--tt-space-4) 0 var(--tt-space-1); }
+      [data-testid="stSidebar"] .tt-section { color: var(--tt-on-obsidian-2); }
+      .tt-when { color: var(--tt-on-obsidian-2); font-size: 0.72rem; text-align: right; white-space: nowrap; }
 
-      /* Page title + data chips */
-      .tt-title { font-size: 1.35rem; font-weight: 650; color: var(--tt-ink); margin: 0; }
-      .tt-sub { color: var(--tt-ink-2); font-size: 0.92rem; margin: 2px 0 var(--tt-space-3); }
+      /* ── White main: hero ────────────────────────────────────────────── */
+      .tt-hero { text-align: center; padding: 1rem 0 1.6rem; }
+      .tt-pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px;
+                 border: 1px solid var(--tt-border); background: var(--tt-surface-2); font-size: 0.82rem;
+                 font-weight: 600; color: var(--tt-ink); box-shadow: inset 0 1px 0 #fff; }
+      .tt-hero .tt-h1 { font-size: 3.4rem; font-weight: 800; letter-spacing: -0.035em;
+                        color: var(--tt-ink); margin: 18px 0 6px; line-height: 1.1; }
+      .tt-underline { position: relative; display: inline-block; }
+      .tt-underline svg { position: absolute; left: 0; bottom: -12px; width: 100%; height: 16px; }
+      .tt-hero p { color: var(--tt-ink-2); font-size: 1.05rem; line-height: 1.6; max-width: 600px; margin: 22px auto 0; }
+
+      /* Upload zone: dashed silver frame, black pill button */
+      [data-testid="stFileUploaderDropzone"] {
+        border: 1.5px dashed #c7c8cd; border-radius: var(--tt-radius-lg); background: #fcfcfd;
+        padding: 2.2rem 1.5rem; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center;
+      }
+      [data-testid="stFileUploaderDropzone"] button {
+        background: var(--tt-ink); color: #fff; border: 0; border-radius: 999px; padding: 0.55rem 1.5rem; font-weight: 600;
+        box-shadow: 0 4px 14px rgba(10,10,11,0.18);
+      }
+      [data-testid="stFileUploaderDropzone"] button:hover { background: #26262a; color: #fff; }
+
+      /* Suggestion cards */
+      [data-testid="stMain"] button[data-testid="stBaseButton-secondary"] {
+        background: var(--tt-surface); border: 1px solid var(--tt-border); border-radius: var(--tt-radius);
+        min-height: 56px; box-shadow: var(--tt-shadow); color: var(--tt-ink);
+      }
+      [data-testid="stMain"] button[data-testid="stBaseButton-secondary"]:hover:enabled { border-color: #a9aab0; color: var(--tt-ink); }
+      [data-testid="stMain"] button[data-testid="stBaseButton-secondary"] p { font-weight: 600; font-size: 0.86rem; }
+
+      /* Chat input: floating card, black send */
+      [data-testid="stChatInput"] { border-radius: 16px; box-shadow: var(--tt-shadow); }
+      [data-testid="stChatInputSubmitButton"] { background: var(--tt-ink) !important; color: #fff !important; border-radius: 10px; }
+      [data-testid="stChatInputSubmitButton"]:disabled { background: #d4d4d8 !important; }
+
+      /* Chat title + data chips */
+      .tt-title { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.01em; color: var(--tt-ink); margin: 0 0 6px; }
       .tt-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--tt-border);
-                 background: var(--tt-surface); border-radius: 999px; padding: 3px 10px; margin: 0 6px 6px 0;
+                 background: var(--tt-surface-2); border-radius: 999px; padding: 4px 11px; margin: 0 6px 6px 0;
                  font-size: 0.8rem; color: var(--tt-ink-2); }
       .tt-chip b { color: var(--tt-ink); font-weight: 600; }
 
-      /* Empty state */
-      .tt-empty { text-align: center; padding: 3rem 1rem 1.5rem; }
-      .tt-empty h2 { font-size: 1.6rem; font-weight: 650; color: var(--tt-ink); margin-bottom: 0.4rem; }
-      .tt-empty p { color: var(--tt-ink-2); margin: 0 auto; max-width: 520px; }
-
-      /* Answer meta line */
+      /* Messages + answers */
+      [data-testid="stChatMessageAvatarCustom"] { background: var(--tt-ink); border: 0; }
+      [data-testid="stChatMessageAvatarCustom"] * { color: #fff !important; fill: #fff; }
       .tt-meta { color: var(--tt-ink-3); font-size: 0.8rem; margin-top: var(--tt-space-1); }
-
-      /* Metrics */
       [data-testid="stMetric"] { background: var(--tt-surface-2); border: 1px solid var(--tt-border);
                                   border-radius: var(--tt-radius); padding: var(--tt-space-3) var(--tt-space-4); }
+      [data-testid="stExpander"] details { border-radius: var(--tt-radius); border-color: var(--tt-border); }
     </style>
     """,
     unsafe_allow_html=True,
@@ -117,6 +186,7 @@ def _new_chat() -> None:
     chat_id = uuid.uuid4().hex[:8]
     st.session_state.chats[chat_id] = {
         "title": "New chat",
+        "created": time.time(),
         "datasets": {},        # table_name -> schema_info
         "unified_schema": "",
         "conn": None,          # DuckDB connection for this chat only
@@ -131,6 +201,17 @@ if "chats" not in st.session_state:
     _new_chat()
 
 chat = st.session_state.chats[st.session_state.active_chat]
+
+
+def _ago(ts: float) -> str:
+    secs = time.time() - ts
+    if secs < 60:
+        return "now"
+    if secs < 3600:
+        return f"{int(secs // 60)}m ago"
+    if secs < 86400:
+        return f"{int(secs // 3600)}h ago"
+    return time.strftime("%b %d", time.localtime(ts))
 
 
 def _is_blank(c: dict) -> bool:
@@ -199,14 +280,18 @@ with st.sidebar:
     st.markdown(
         """
         <div class="tt-brand">
-          <span class="tt-brand-mark">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-              <rect x="1" y="7" width="3" height="6" rx="1" fill="#fff"/>
-              <rect x="5.5" y="4" width="3" height="9" rx="1" fill="#fff"/>
-              <rect x="10" y="1" width="3" height="12" rx="1" fill="#86b6ef"/>
-            </svg>
-          </span>
-          Talk to Data
+          <svg width="34" height="34" viewBox="0 0 34 34" fill="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="tt-chrome" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#fbfbfc"/><stop offset="0.45" stop-color="#9c9da3"/>
+                <stop offset="0.7" stop-color="#e9e9ec"/><stop offset="1" stop-color="#b4b5ba"/>
+              </linearGradient>
+            </defs>
+            <rect x="3" y="17" width="7" height="14" rx="2" fill="url(#tt-chrome)"/>
+            <rect x="13.5" y="10" width="7" height="21" rx="2" fill="url(#tt-chrome)"/>
+            <rect x="24" y="3" width="7" height="28" rx="2" fill="url(#tt-chrome)"/>
+          </svg>
+          <div><div class="tt-brand-name">Talk to Data</div><div class="tt-brand-sub">AI Data Analysis</div></div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -217,17 +302,22 @@ with st.sidebar:
             _new_chat()
         st.rerun()
 
-    st.markdown('<div class="tt-section">Chats</div>', unsafe_allow_html=True)
+    st.markdown('<div class="tt-section">Recent chats</div>', unsafe_allow_html=True)
     for chat_id in reversed(list(st.session_state.chats)):
         c = st.session_state.chats[chat_id]
         is_active = chat_id == st.session_state.active_chat
-        if st.button(
-            c["title"],
-            key=f"open_{chat_id}",
-            type="secondary" if is_active else "tertiary",
-            icon=":material/chat_bubble:" if is_active else None,
-            width="stretch",
-        ) and not is_active:
+        name_col, when_col = st.columns([4, 1.3], gap="small", vertical_alignment="center")
+        with name_col:
+            clicked = st.button(
+                c["title"],
+                key=f"open_{chat_id}",
+                type="secondary" if is_active else "tertiary",
+                icon=":material/chat_bubble_outline:",
+                width="stretch",
+            )
+        with when_col:
+            st.markdown(f'<div class="tt-when">{_ago(c["created"])}</div>', unsafe_allow_html=True)
+        if clicked and not is_active:
             st.session_state.active_chat = chat_id
             st.rerun()
 
@@ -338,7 +428,7 @@ def _render_answer(result: AnswerResult) -> None:
         df = result.result_df
         if result.chart is not None:
             # The question sits right above, so the chart needs no title
-            result.chart.update_layout(title_text=None, margin_t=12)
+            result.chart.update_layout(title_text="", margin_t=12)
             st.plotly_chart(result.chart, width="stretch")
         elif df is not None and result.row_count == 1 and result.col_count == 1:
             st.metric(label=str(df.columns[0]).replace("_", " ").title(), value=_fmt_number(df.iloc[0, 0]))
@@ -376,35 +466,46 @@ has_data = bool(chat["datasets"])
 if not has_data and not chat["history"]:
     st.markdown(
         """
-        <div class="tt-empty">
-          <h2>What would you like to analyse?</h2>
-          <p>Upload up to three CSV or Excel files, then ask questions in plain English.
-             You'll get an answer, a chart and the exact SQL behind it.</p>
+        <div class="tt-hero">
+          <span class="tt-pill">✦ AI Data Analyst</span>
+          <div class="tt-h1">Talk to <span class="tt-underline">Your Data
+            <svg viewBox="0 0 300 16" preserveAspectRatio="none" aria-hidden="true">
+              <defs><linearGradient id="tt-swoosh" x1="0" x2="1">
+                <stop offset="0" stop-color="#0a0a0b" stop-opacity="0.05"/>
+                <stop offset="0.5" stop-color="#8e8f95"/>
+                <stop offset="1" stop-color="#0a0a0b" stop-opacity="0.05"/>
+              </linearGradient></defs>
+              <path d="M4 11 C 80 3, 210 3, 296 9" stroke="url(#tt-swoosh)" stroke-width="4" fill="none" stroke-linecap="round"/>
+            </svg></span></div>
+          <p>Upload your data, ask questions in plain English, and get instant insights,
+             charts and the exact SQL behind every answer.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    _uploader("Upload data for this chat")
+    _uploader("Upload your data to get started · CSV or Excel · up to 3 files")
 else:
     st.markdown(f'<p class="tt-title">{html.escape(chat["title"])}</p>', unsafe_allow_html=True)
     if has_data:
         _data_panel()
     else:
-        st.markdown('<p class="tt-sub">This chat has no data. Upload a file to keep asking.</p>', unsafe_allow_html=True)
+        st.caption("This chat has no data. Upload a file to keep asking.")
         _uploader("Upload data for this chat")
 
 for q, result in chat["history"]:
     with st.chat_message("user", avatar=":material/person:"):
         st.markdown(_md_safe(q))
-    with st.chat_message("assistant", avatar=":material/analytics:"):
+    with st.chat_message("assistant", avatar=":material/auto_awesome:"):
         _render_answer(result)
 
 pending = None
-if has_data and not chat["history"]:
-    st.markdown('<div class="tt-section">Try asking</div>', unsafe_allow_html=True)
-    for i, suggestion in enumerate(STARTER_QUESTIONS):
-        if st.button(suggestion, key=f"starter_{i}", type="tertiary", icon=":material/arrow_outward:"):
-            pending = suggestion
+if not chat["history"]:
+    st.markdown('<div class="tt-section">Try asking something like</div>', unsafe_allow_html=True)
+    for col, (icon, suggestion) in zip(st.columns(len(STARTER_QUESTIONS)), STARTER_QUESTIONS):
+        with col:
+            if st.button(suggestion, key=f"starter_{suggestion}", icon=icon, width="stretch",
+                         disabled=not has_data, help=None if has_data else "Upload a file first"):
+                pending = suggestion
 
 typed = st.chat_input(
     "Ask a question about your data…" if has_data else "Upload a file to start asking",
@@ -415,7 +516,7 @@ question = (typed or pending or "").strip()
 if question:
     with st.chat_message("user", avatar=":material/person:"):
         st.markdown(_md_safe(question))
-    with st.chat_message("assistant", avatar=":material/analytics:"):
+    with st.chat_message("assistant", avatar=":material/auto_awesome:"):
         with st.spinner("Analysing…"):
             result = _ask(chat, question)
     chat["history"].append((question, result))

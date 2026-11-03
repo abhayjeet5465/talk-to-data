@@ -1,11 +1,19 @@
 # Design tokens Streamlit applies natively. Mirrors the CSS tokens in app.py.
 [theme]
 base = "light"
-primaryColor = "#2a78d6"
+primaryColor = "#0a0a0b"
 backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f6f6f8"
-textColor = "#18181b"
+secondaryBackgroundColor = "#f7f7f8"
+textColor = "#0a0a0b"
 font = "sans serif"
+borderColor = "#e6e6ea"
+
+[theme.sidebar]
+backgroundColor = "#0a0a0b"
+secondaryBackgroundColor = "#18181b"
+textColor = "#e7e7ea"
+primaryColor = "#c3c4c9"
+borderColor = "#232327"
 
 [client]
 toolbarMode = "minimal"

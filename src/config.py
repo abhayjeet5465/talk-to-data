@@ -47,8 +47,11 @@ def validate_config() -> list[str]:
     return warnings
 
 
+# Single-series charts use graphite to match the black/silver UI.
+CHART_INK: str = "#3f3f46"
+
 # Categorical chart palette, in fixed order (validated for colour-blind
-# separation on a light surface). Single-series charts use slot 1 only.
+# separation on a light surface). Used when a chart has several series.
 CHART_COLORS: list[str] = [
     "#2a78d6",  # blue
     "#eb6834",  # orange

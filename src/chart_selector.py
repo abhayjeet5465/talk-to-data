@@ -27,7 +27,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-from src.config import CHART_COLORS
+from src.config import CHART_COLORS, CHART_INK
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +171,7 @@ def _bar_chart(
         y=x_col,
         orientation="h",
         labels={y_col: _prettify(y_col), x_col: _prettify(x_col)},
-        color_discrete_sequence=CHART_COLORS[:1],  # one series, one colour
+        color_discrete_sequence=[CHART_INK],  # one series, one colour
     )
     fig = _apply_theme(fig, title)
     fig.update_traces(marker_line_width=0)
@@ -194,7 +194,7 @@ def _line_chart(
         y=y_col,
         labels={y_col: _prettify(y_col), x_col: _prettify(x_col)},
         markers=True,
-        color_discrete_sequence=CHART_COLORS[:1],
+        color_discrete_sequence=[CHART_INK],
     )
     fig = _apply_theme(fig, title)
     fig.update_traces(line_width=2, marker_size=8)
