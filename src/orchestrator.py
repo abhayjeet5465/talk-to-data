@@ -202,7 +202,7 @@ def run_query(
     # ── Step 5: Render chart ───────────────────────────────────────────────
     chart = select_and_render(result_df, question)
 
-    source_info = f"{filename} · {len(result_df)} rows analysed"
+    source_info = f"{filename} · {len(result_df)} row{'' if len(result_df) == 1 else 's'} analysed"
 
     return AnswerResult(
         answer=payload.answer,
@@ -309,7 +309,7 @@ def run_query_multi(
     # ── Step 5: Render chart ───────────────────────────────────────────────
     chart = select_and_render(result_df, question)
 
-    source_info = f"{filenames} · {len(result_df)} rows analysed"
+    source_info = f"{filenames} · {len(result_df)} row{'' if len(result_df) == 1 else 's'} analysed"
 
     return AnswerResult(
         answer=payload.answer,

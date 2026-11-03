@@ -265,6 +265,8 @@ def _ask(c: dict, question: str) -> AnswerResult:
 def _fmt_number(raw) -> str:
     try:
         f = float(raw)
+        if f != f:  # NaN: the query matched nothing
+            return "No data"
         return f"{int(f):,}" if f == int(f) else f"{f:,.2f}"
     except (ValueError, TypeError, OverflowError):
         return str(raw)

@@ -62,7 +62,7 @@ def test_run_query_populates_source_info(conn):
             result = run_query(QUESTION, SCHEMA_STR, conn, FILENAME)
 
     assert FILENAME in result.source_info
-    assert "rows analysed" in result.source_info
+    assert "1 row analysed" in result.source_info
 
 
 def test_run_query_populates_row_and_col_counts(conn):
