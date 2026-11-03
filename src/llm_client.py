@@ -6,9 +6,9 @@ src/llm_client.py — LLM API wrapper for Talk to Data.
 Provides a single entry point: call_llm(system_prompt, user_message) -> str
 
 Fallback chain (mirrors the architecture in REFERENCE.md §9):
-  1. Groq  llama-3.3-70b-versatile  (primary — fastest free inference)
-  2. Groq  llama-3.1-8b-instant     (secondary — higher rate limit)
-  3. Gemini gemini-2.5-flash        (tertiary — different provider)
+  1. Groq  openai/gpt-oss-120b      (primary — fastest free inference)
+  2. Groq  openai/gpt-oss-20b       (secondary — higher rate limit)
+  3. Gemini gemini-3.5-flash        (tertiary — different provider)
 
 On every HTTP 429 (rate limit) the next provider is tried automatically.
 Any other exception is re-raised as LLMError with a user-friendly message
@@ -151,9 +151,9 @@ def call_llm(
     """Call an LLM with automatic provider fallback.
 
     Tries providers in order until one succeeds:
-        1. Groq  (GROQ_MODEL_PRIMARY  — llama-3.3-70b-versatile)
-        2. Groq  (GROQ_MODEL_FALLBACK — llama-3.1-8b-instant)
-        3. Gemini (GEMINI_MODEL       — gemini-2.5-flash)
+        1. Groq  (GROQ_MODEL_PRIMARY  — openai/gpt-oss-120b)
+        2. Groq  (GROQ_MODEL_FALLBACK — openai/gpt-oss-20b)
+        3. Gemini (GEMINI_MODEL       — gemini-3.5-flash)
 
     On HTTP 429 the next provider is tried. Any other Groq error or any
     Gemini error is caught and wrapped in LLMError.
