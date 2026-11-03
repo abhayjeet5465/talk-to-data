@@ -146,12 +146,15 @@ st.markdown(
       [data-testid="stFileUploaderDropzone"] button:hover { background: #26262a; color: #fff; }
 
       /* Suggestion cards */
-      [data-testid="stMain"] button[data-testid="stBaseButton-secondary"] {
+      [class*="st-key-starter_"] button {
         background: var(--tt-surface); border: 1px solid var(--tt-border); border-radius: var(--tt-radius);
         min-height: 56px; box-shadow: var(--tt-shadow); color: var(--tt-ink);
       }
-      [data-testid="stMain"] button[data-testid="stBaseButton-secondary"]:hover:enabled { border-color: #a9aab0; color: var(--tt-ink); }
-      [data-testid="stMain"] button[data-testid="stBaseButton-secondary"] p { font-weight: 600; font-size: 0.86rem; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.35; }
+      [class*="st-key-starter_"] button:hover:enabled { border-color: #a9aab0; color: var(--tt-ink); }
+      [class*="st-key-starter_"] button p,
+      [class*="st-key-starter_"] button [data-testid="stMarkdownContainer"] {
+        font-weight: 600; font-size: 0.86rem; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.35;
+      }
 
       /* Chat input: floating card, black send */
       [data-testid="stChatInput"] { border-radius: 16px; box-shadow: var(--tt-shadow); }
